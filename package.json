@@ -1,5 +1,5 @@
 {
-  "name": "codegen",
+  "name": "astify",
   "version": "0.0.1",
   "description": "",
   "main": "codegen.js",
