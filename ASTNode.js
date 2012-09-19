@@ -1,8 +1,8 @@
 var esprima = require('esprima'),
-    escodegen = require('escodegen');
+    escodegen = require('escodegen'),
+    inspect = require('util').inspect;
 
 var Visitor       = require('./Visitor'),
-    AST           = require('./AST'),
     Registry      = require('./utility').Registry,
     options       = require('./options'),
     Mixin         = require('./utility').Mixin,
@@ -19,10 +19,11 @@ var _push = [].push,
 var _ = createStorage();
 
 
-module.exports = ASTNode;
 
 
-
+function functionAST(f){
+  return ASTNode(esprima.parse('('+f+')').body[0].expression);
+}
 
 function assertInstance(o, types){
   var err;
@@ -73,7 +74,7 @@ Mixin.create('functions', function(o){
         this.body.prepend(decl)
       }
       decl.declare(vars);
-      return vars;
+      return this;
     },
     function hoist(){
       _hoist(this, this.body);
@@ -276,7 +277,7 @@ function Location(loc, range){
 // ################
 
 function ASTArray(array){
-  this.length = 0;
+  define(this, 'length', 0)
   this.push.apply(this, array);
 }
 
@@ -321,6 +322,10 @@ inherit(ASTArray, Array, [
 
 function ASTNode(json){
   if (!json) return
+
+  if (typeof json === 'string')
+    return ASTNode.createNode.apply(null, arguments);
+
   nodeTypes.lookup(json.type).fromJSON(json);
 
   if (json.loc) {
@@ -353,12 +358,14 @@ function ASTNode(json){
   return json;
 }
 
-
-var nodeTypes = ASTNode.nodeTypes = new Registry;
+var nodeTypes = new Registry;
+define(ASTNode, 'registry', nodeTypes);
+ASTNode.types = {};
 
 nodeTypes.on('register', function(name, Ctor, args){
   var Super = args[0],
-      props = args[1];
+      props = args[2],
+      shortname = args[1];
   inherit(Ctor, Super, props);
   define(Ctor.prototype, { type: name });
   define(Ctor, [
@@ -368,6 +375,7 @@ nodeTypes.on('register', function(name, Ctor, args){
       return json;
     }
   ]);
+  ASTNode.types[shortname] = Ctor;
 });
 
 
@@ -376,9 +384,13 @@ define(ASTNode, [
     return o instanceof FunctionExpression || o instanceof FunctionDeclaration;
   },
   function createNode(type){
-    var Ctor = nodeTypes.lookup(type);
+    if (type instanceof ASTNode)
+      return type;
+    var Ctor = ASTNode.types[type] || nodeTypes.lookup(type);
     if (Ctor)
       return new Ctor(arguments[1], arguments[2], arguments[3], arguments[4], arguments[5]);
+    else
+      throw new TypeError('Unknown AST Node type "'+type+'"');
   }
 ]);
 
@@ -551,7 +563,7 @@ function AssignmentExpression(operator, left, right){
   this.left = assertInstance(left, Expression);
   this.right = assertInstance(right, Expression);
 }
-nodeTypes.register(AssignmentExpression, Expression, []);
+nodeTypes.register(AssignmentExpression, Expression, 'assign', []);
 AssignmentExpression.operators = ['=', '+=', '-=', '*=', '/=', '%=',
                                   '<<=', '>>=', '>>>=', '|=', '^=', '&='];
 
@@ -563,7 +575,7 @@ AssignmentExpression.operators = ['=', '+=', '-=', '*=', '/=', '%=',
 function ArrayExpression(elements){
   this.elements = new ASTArray(elements);
 }
-nodeTypes.register(ArrayExpression, Expression, []);
+nodeTypes.register(ArrayExpression, Expression, 'array', []);
 Mixin.use('arrays', ArrayExpression.prototype, {
   property: 'elements',
   type: [null, Expression]
@@ -577,7 +589,7 @@ Mixin.use('arrays', ArrayExpression.prototype, {
 function BlockStatement(body){
   this.body = new ASTArray(body);
 }
-nodeTypes.register(BlockStatement, Statement, []);
+nodeTypes.register(BlockStatement, Statement, 'block', []);
 Mixin.use('arrays', BlockStatement.prototype, {
   property: 'body',
   type: Statement
@@ -593,7 +605,7 @@ function BinaryExpression(operator, left, right){
   this.left = assertInstance(left, Expression);
   this.right = assertInstance(right, Expression);
 }
-nodeTypes.register(BinaryExpression, Expression, []);
+nodeTypes.register(BinaryExpression, Expression, 'binary', []);
 BinaryExpression.operators = ['==' , '!=', '===', '!==', '<' , '<=' , '>', '>=',
                               '<<', '>>', '>>>', '+' , '-' , '*', '/', '%', '|' ,
                               '^' , 'in', 'instanceof'];
@@ -607,7 +619,7 @@ BinaryExpression.operators = ['==' , '!=', '===', '!==', '<' , '<=' , '>', '>=',
 function BreakStatement(label){
   this.label = label == null ? null : makeIdentifier(label);
 }
-nodeTypes.register(BreakStatement, Statement, []);
+nodeTypes.register(BreakStatement, Statement, 'break', []);
 
 
 // ######################
@@ -621,7 +633,7 @@ function CallExpression(callee, args){
   this.callee = assertInstance(callee, Expression);
   this.arguments = new ASTArray(args);
 }
-nodeTypes.register(CallExpression, Expression, []);
+nodeTypes.register(CallExpression, Expression, 'call', []);
 Mixin.use('arrays', CallExpression.prototype, {
   property: 'arguments',
   type: ASTNode
@@ -633,9 +645,11 @@ Mixin.use('arrays', CallExpression.prototype, {
 
 function CatchClause(param, body){
   this.param = assertInstance(param, Identifier);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
   this.body = assertInstance(body, BlockStatement);
 }
-nodeTypes.register(CatchClause, ASTNode, []);
+nodeTypes.register(CatchClause, ASTNode, 'catch', []);
 
 
 // #############################
@@ -647,7 +661,7 @@ function ConditionalExpression(test, consequent, alternate){
   this.consequent = assertInstance(consequent, Expression);
   this.alternate = assertInstance(alternate, Expression);
 }
-nodeTypes.register(ConditionalExpression, Expression, []);
+nodeTypes.register(ConditionalExpression, Expression, 'conditional', []);
 
 
 
@@ -658,7 +672,7 @@ nodeTypes.register(ConditionalExpression, Expression, []);
 function ContinueStatement(label){
   this.label = label === null ? null : makeIdentifier(label);
 }
-nodeTypes.register(ContinueStatement, Statement, []);
+nodeTypes.register(ContinueStatement, Statement, 'continue', []);
 
 
 // ########################
@@ -667,9 +681,11 @@ nodeTypes.register(ContinueStatement, Statement, []);
 
 function DoWhileStatement(test, body){
   this.test = assertInstance(test, Expression);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
   this.body = assertInstance(body, Statement);
 }
-nodeTypes.register(DoWhileStatement, Statement, []);
+nodeTypes.register(DoWhileStatement, Statement, 'dowhile', []);
 
 
 // #########################
@@ -677,7 +693,7 @@ nodeTypes.register(DoWhileStatement, Statement, []);
 // #########################
 
 function DebuggerStatement(){}
-nodeTypes.register(DebuggerStatement, Statement);
+nodeTypes.register(DebuggerStatement, Statement, 'debugger');
 
 
 // ######################
@@ -685,7 +701,7 @@ nodeTypes.register(DebuggerStatement, Statement);
 // ######################
 
 function EmptyStatement(){}
-nodeTypes.register(EmptyStatement, Statement);
+nodeTypes.register(EmptyStatement, Statement, 'empty');
 
 
 // ###########################
@@ -695,7 +711,7 @@ nodeTypes.register(EmptyStatement, Statement);
 function ExpressionStatement(expression){
   this.expression = assertInstance(expression, Expression);
 }
-nodeTypes.register(ExpressionStatement, Statement, []);
+nodeTypes.register(ExpressionStatement, Statement, 'expression', []);
 
 
 // ####################
@@ -706,9 +722,11 @@ function ForStatement(init, test, update, body){
   this.init = assertInstance(init, [null, VariableDeclaration, Expression]);
   this.test = assertInstance(test, [null, Expression]);
   this.update = assertInstance(update, [null, Expression]);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
   this.body = assertInstance(body, Statement);
 }
-nodeTypes.register(ForStatement, Statement, []);
+nodeTypes.register(ForStatement, Statement, 'for', []);
 
 
 
@@ -717,11 +735,13 @@ nodeTypes.register(ForStatement, Statement, []);
 // ######################
 
 function ForInStatement(left, right, body){
-  this.body = assertInstance(body, Statement);
   this.left = assertInstance(left, [VariableDeclaration, Expression]);
   this.right = assertInstance(right, Expression);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
+  this.body = assertInstance(body, Statement);
 }
-nodeTypes.register(ForInStatement, Statement, []);
+nodeTypes.register(ForInStatement, Statement, 'forin', []);
 
 
 // ###########################
@@ -731,11 +751,11 @@ nodeTypes.register(ForInStatement, Statement, []);
 function FunctionDeclaration(id, body, params){ //generator, rest, defaults
   this.params = new ASTArray(params);
   this.id = makeIdentifier(id);
-  if (body instanceof Array || !body)
+  if (!body || body instanceof Array)
     body = new BlockStatement(body);
   this.body = assertInstance(body, [BlockStatement, Expression]);;
 }
-nodeTypes.register(FunctionDeclaration, Statement, [
+nodeTypes.register(FunctionDeclaration, Statement, 'functiondecl', [
   function toExpression(){
     var out = Object.create(FunctionExpression.prototype);
     Object.keys(this).forEach(function(key){
@@ -761,7 +781,7 @@ function FunctionExpression(id, body, params){
   if (id == null)
     this.id = null;
 }
-nodeTypes.register(FunctionExpression, Expression, [
+nodeTypes.register(FunctionExpression, Expression, 'function', [
   function toDeclaration(){
     var out = Object.create(FunctionExpression.prototype);
     Object.keys(this).forEach(function(key){
@@ -788,7 +808,7 @@ function Identifier(name){
     return name;
   this.name = name;
 }
-nodeTypes.register(Identifier, Expression, []);
+nodeTypes.register(Identifier, Expression, 'identifier', []);
 
 
 // ###################
@@ -797,10 +817,12 @@ nodeTypes.register(Identifier, Expression, []);
 
 function IfStatement(test, consequent, alternate){
   this.test = assertInstance(test, Expression);
+  if (!consequent || consequent instanceof Array)
+    consequent = new BlockStatement(consequent);
   this.consequent = assertInstance(consequent, Statement);
   this.alternate = assertInstance(alternate, [null, Statement]);
 }
-nodeTypes.register(IfStatement, Statement, []);
+nodeTypes.register(IfStatement, Statement, 'if', []);
 
 
 // ###############
@@ -810,7 +832,7 @@ nodeTypes.register(IfStatement, Statement, []);
 function Literal(value){
   this.value = value;
 }
-nodeTypes.register(Literal, Expression, []);
+nodeTypes.register(Literal, Expression, 'literal', []);
 
 
 
@@ -820,9 +842,11 @@ nodeTypes.register(Literal, Expression, []);
 
 function LabeledStatement(label, body){
   this.label = makeIdentifier(label);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
   this.body = assertInstance(body, Statement);
 }
-nodeTypes.register(LabeledStatement, Statement, []);
+nodeTypes.register(LabeledStatement, Statement, 'labeled', []);
 
 
 // #########################
@@ -834,7 +858,7 @@ function LogicalExpression(operator, left, right){
   this.left = assertInstance(left, Expression);
   this.right = assertInstance(right, Expression);
 }
-nodeTypes.register(LogicalExpression, Expression, []);
+nodeTypes.register(LogicalExpression, Expression, 'logical', []);
 LogicalExpression.operators = ['&&', '||'];
 
 
@@ -847,7 +871,7 @@ function MemberExpression(object, property){
   this.property = assertInstance(property, Expression);
   this.computed = !(this.property instanceof Literal || this.property instanceof Identifier);
 }
-nodeTypes.register(MemberExpression, Expression, [
+nodeTypes.register(MemberExpression, Expression, 'member', [
   function assign(value){
     return new AssignmentExpression('=', this, value);
   }
@@ -864,7 +888,7 @@ function NewExpression(callee, args){
   if (args)
     this.append(args);
 }
-nodeTypes.register(NewExpression, Expression, []);
+nodeTypes.register(NewExpression, Expression, 'new', []);
 Mixin.use('arrays', NewExpression.prototype, {
   property: 'arguments',
   type: Expression
@@ -877,14 +901,44 @@ Mixin.use('arrays', NewExpression.prototype, {
 
 function ObjectExpression(properties){
   this.properties = new ASTArray;
-  if (properties)
+  if (properties instanceof Array)
     this.append(properties);
+  else if (isObject(properties))
+    this.set(properties);
 }
-nodeTypes.register(ObjectExpression, Expression, [
+nodeTypes.register(ObjectExpression, Expression, 'object', [
   function nameMethods(){
     this.forEach(function(prop){
       prop.nameMethod();
     });
+    return this;
+  },
+  function set(key, value){
+    if (key instanceof Identifier)
+      key = key.name;
+
+    if (isObject(key)) {
+      var o = key;
+      Object.keys(o).forEach(function(key){
+        var desc = Object.getOwnPropertyDescriptor(o, key);
+        if (desc) {
+          if (desc.set) this.append(new Property('set', key, functionAST(desc.set)));
+          if (desc.get) this.append(new Property('get', key, functionAST(desc.get)))
+          if ('value' in desc) this.set(key, desc.value);
+        }
+      }, this);
+      return this;
+    } else if (typeof key === 'string') {
+      if (!isObject(value))
+        value = new Literal(value);
+      else if (typeof value === 'function')
+        value = functionAST(value);
+      if (value instanceof ASTNode && !(value instanceof Property))
+        value = new Property('init', key, value);
+
+      if (value instanceof Property)
+        this.append(value)
+    }
     return this;
   }
 ]);
@@ -899,10 +953,9 @@ Mixin.use('arrays', ObjectExpression.prototype, {
 // ###############
 
 function Program(body, comments){
-  this.body = new ASTArray;
-  body && this.append(body);
+  this.body = new ASTArray(body);
 }
-nodeTypes.register(Program, ASTNode, [
+nodeTypes.register(Program, ASTNode, 'program', [
   function hoist(){
     _hoist(this, this);
   }
@@ -927,10 +980,8 @@ function Property(kind, key, value){
     this.value.identity = this.key;
 
   this.kind = typeof kind === 'number' ? Property.kinds[kind] : kind;
-  if (this.kind !== 'init')
-    this.value.body.body.__proto__ = ASTArray.prototype;
 }
-nodeTypes.register(Property, ASTNode, [
+nodeTypes.register(Property, ASTNode, 'property', [
   function nameMethod(){
     if (this.kind === 'init' && ASTNode.isFunction(this.value))
       this.value.id = this.key;
@@ -966,7 +1017,7 @@ define(Property.prototype, {
 function ReturnStatement(argument){
   this.argument = assertInstance(argument, [null, Expression]);
 }
-nodeTypes.register(ReturnStatement, Statement, []);
+nodeTypes.register(ReturnStatement, Statement, 'return', []);
 
 
 
@@ -977,7 +1028,7 @@ nodeTypes.register(ReturnStatement, Statement, []);
 function SequenceExpression(expressions){
   this.expressions = new ASTArray(expressions);
 }
-nodeTypes.register(SequenceExpression, Expression, []);
+nodeTypes.register(SequenceExpression, Expression, 'sequence', []);
 Mixin.use('arrays', SequenceExpression.prototype, {
   property: 'expressions',
   type: Expression
@@ -992,7 +1043,7 @@ function SwitchStatement(descriminant, cases){
   this.descriminant = assertInstance(descriminant, Expression);
   this.cases = new ASTArray(cases);
 }
-nodeTypes.register(SwitchStatement, Statement, []);
+nodeTypes.register(SwitchStatement, Statement, 'switch', []);
 Mixin.use('arrays', SwitchStatement.prototype, {
   property: 'cases',
   type: SwitchCase
@@ -1005,11 +1056,9 @@ Mixin.use('arrays', SwitchStatement.prototype, {
 
 function SwitchCase(test, consequent){
   this.test = assertInstance(test, [null, Expression]);
-  this.consequent = new ASTArray;
-  if (consequent)
-    this.append(consequent);
+  this.consequent = new ASTArray(consequent);
 }
-nodeTypes.register(SwitchCase, ASTNode, []);
+nodeTypes.register(SwitchCase, ASTNode, 'case', []);
 Mixin.use('arrays', SwitchCase.prototype, {
   property: 'cases',
   type: Statement
@@ -1022,7 +1071,7 @@ Mixin.use('arrays', SwitchCase.prototype, {
 // ######################
 
 function ThisExpression(){}
-nodeTypes.register(ThisExpression, Expression);
+nodeTypes.register(ThisExpression, Expression, 'this');
 
 
 // ######################
@@ -1032,7 +1081,7 @@ nodeTypes.register(ThisExpression, Expression);
 function ThrowStatement(argument){
   this.argument = assertInstance(argument, Expression);
 }
-nodeTypes.register(ThrowStatement, Statement, []);
+nodeTypes.register(ThrowStatement, Statement, 'throw', []);
 
 
 // ####################
@@ -1040,10 +1089,12 @@ nodeTypes.register(ThrowStatement, Statement, []);
 // ####################
 
 function TryStatement(block, handlers, finalizer){
+  if (!block || block instanceof Array)
+    block = new BlockStatement(block);
   this.block = assertInstance(block, BlockStatement);
   this.handlers = new ASTArray(handlers);
 }
-nodeTypes.register(TryStatement, Statement, []);
+nodeTypes.register(TryStatement, Statement, 'try', []);
 Mixin.use('arrays', TryStatement.prototype, {
   property: 'handlers',
   type: CatchClause
@@ -1059,7 +1110,7 @@ function UnaryExpression(operator, argument, prefix){
   this.argument = assertInstance(argument, Expression);
   this.prefix = !!prefix;
 }
-nodeTypes.register(UnaryExpression, Expression, []);
+nodeTypes.register(UnaryExpression, Expression, 'unary', []);
 UnaryExpression.operators = ['+', '-', '~', '!', 'typeof', 'void', 'delete'];
 
 
@@ -1072,7 +1123,7 @@ function UpdateExpression(operator, argument, prefix){
   this.argument = assertInstance(argument, Expression);
   this.prefix = !!prefix;
 }
-nodeTypes.register(UpdateExpression, Expression, []);
+nodeTypes.register(UpdateExpression, Expression, 'update', []);
 UpdateExpression.operators = ['++', '--'];
 
 
@@ -1091,7 +1142,7 @@ function VariableDeclaration(kind, declarations){
   this.kind = kind;
   this.declarations = new ASTArray(declarations);
 }
-nodeTypes.register(VariableDeclaration, Declaration, [
+nodeTypes.register(VariableDeclaration, Declaration, 'var', [
   function declare(vars){
     if (arguments.length > 1) {
       if (typeof arguments[1] !== 'string') {
@@ -1107,8 +1158,20 @@ nodeTypes.register(VariableDeclaration, Declaration, [
       for (var i=0; i < vars.length; i++)
         this.append(new VariableDeclarator(vars[i]));
     } else if (isObject(vars)) {
-      for (var k in vars)
-        this.append(new VariableDeclarator(k, vars[k]));
+      for (var k in vars) {
+        if (vars[k] instanceof ASTNode)
+          var item = vars[k]
+        else if (vars[k] === undefined)
+          var item = null
+        else if (!isObject(vars[k]))
+          var item = new Literal(vars[k])
+        else if (typeof vars[k] === 'function')
+          var item = functionAST(vars[k]);
+        else if (Object.getPrototypeOf(vars[k]) === Object.prototype)
+          var item = new ObjectExpression(vars[k]);
+        if (item === null || item instanceof ASTNode)
+          this.append(new VariableDeclarator(k, item));
+      }
     }
     return this;
   }
@@ -1133,7 +1196,7 @@ function VariableDeclarator(id, init){
   this.id = makeIdentifier(id);
   this.init = assertInstance(init, [null, Expression]);
 }
-nodeTypes.register(VariableDeclarator, ASTNode, []);
+nodeTypes.register(VariableDeclarator, ASTNode, 'decl', []);
 
 
 
@@ -1143,9 +1206,11 @@ nodeTypes.register(VariableDeclarator, ASTNode, []);
 
 function WhileStatement(test, body){
   this.test = assertInstance(test, Expression);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
   this.body = assertInstance(body, Statement);
 }
-nodeTypes.register(WhileStatement, Statement, []);
+nodeTypes.register(WhileStatement, Statement, 'while', []);
 
 
 
@@ -1155,9 +1220,11 @@ nodeTypes.register(WhileStatement, Statement, []);
 
 function WithStatement(object, body){
   this.object = assertInstance(object, Expression);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
   this.body = assertInstance(body, Statement);
 }
-nodeTypes.register(WithStatement, Statement, []);
+nodeTypes.register(WithStatement, Statement, 'with', []);
 
 
 
@@ -1176,14 +1243,19 @@ function ImmediatelyInvokedFunctionExpression(func, args){
 
   CallExpression.call(this, func, args);
 }
-nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, [
+nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, 'iife', [
   function toSource(){
     return '('+CallExpression.prototype.toSource.call(this)+')';
+  },
+  function append(statement){
+    this.callee.body.append(statement);
+    return this;
+  },
+  function declare(decls){
+    this.callee.declare(decls);
+    return this;
   }
 ]);
 define(ImmediatelyInvokedFunctionExpression.prototype, {
   type: 'CallExpression',
 });
-
-
-

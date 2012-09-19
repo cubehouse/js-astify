@@ -1,13 +1,11 @@
 var AST = require('./AST');
 
 module.exports = {
-  toAstify: require('./toAst'),
+  install: require('./toAst'),
   parseFile: function parseFile(file){
     return new AST(2, file)
   },
-  parseFunction: function parseFunction(fn){
-    return new AST(1, file);
-  },
+  createNode: require('./ASTNode').createNode,
   AST: AST,
   ASTNode: require('./ASTNode')
 };

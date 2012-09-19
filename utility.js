@@ -24,10 +24,15 @@ void function(LOG){
     }
   }
 }(console.log);
+var isArr = Array.isArray;
+
 function inspect(o){
   if (o instanceof RegExp)
     return o;
-  return util.inspect(o, null, 15, false);
+  Array.isArray = function(o){ return isArr(o) || o instanceof Array }
+  var out = util.inspect(o, null, 20, false);
+  Array.isArray = isArr;
+  return out;
 }
 
 

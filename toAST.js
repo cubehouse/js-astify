@@ -11,15 +11,15 @@ module.exports = astify;
 
 function astify(ctx){
   ctx = ctx || global;
-  function makeAST(o, showHidden, seen, identity){
+  function makeAST(o, showHidden, identity, seen){
     if (!isObject(o))
       return create('Literal', o);
     else if (seen.has(o))
       return create('Identifier', seen.get(o));
     else if (typeof o.toAST === 'function')
-      return o.toAST(showHidden, seen, identity);
+      return o.toAST(showHidden, identity, seen);
     else
-      return ctx.Object.prototype.toAST.call(o, showHidden, seen, identity);
+      return ctx.Object.prototype.toAST.call(o, showHidden, identity, seen);
   }
   var O = {
     defineProperty: create('MemberExpression', 'Object', 'defineProperty'),
@@ -60,7 +60,7 @@ function astify(ctx){
     }
   }
 
-  var primitiveToAST = function toAST(showHidden, seen){
+  var primitiveToAST = function toAST(showHidden, identity, seen){
     var out = create('Literal', this);
     if (seen) {
       if (seen.has(this))
@@ -75,7 +75,7 @@ function astify(ctx){
   define(ctx.Boolean.prototype, primitiveToAST);
   define(ctx.RegExp.prototype, primitiveToAST);
 
-  define(ctx.Array.prototype, function toAST(showHidden, seen, identity){
+  define(ctx.Array.prototype, function toAST(showHidden, identity, seen){
     if (typeof seen === 'boolean') {
       identity = showHidden;
       showHidden = seen;
@@ -97,7 +97,7 @@ function astify(ctx){
     seen.set(this, array.identity);
 
     this.forEach(function(item){
-      array.append(makeAST(item, showHidden, seen, identity));
+      array.append(makeAST(item, showHidden, identity, seen));
     });
 
     var keys = (showHidden ? ctx.Object.getOwnPropertyNames(this) : ctx.Object.keys(this)).filter(function(k){
@@ -117,7 +117,7 @@ function astify(ctx){
         if ('get' in desc || 'set' in desc || !desc.enumerable || !desc.configurable || !desc.writable)
           descs.push(key);
         else
-          scope.body.append(create('MemberExpression', ret.argument, key).assign(makeAST(desc.value, showHidden, seen, key)));
+          scope.body.append(create('MemberExpression', ret.argument, key).assign(makeAST(desc.value, showHidden, key, seen)));
       }
     }, this);
 
@@ -126,7 +126,7 @@ function astify(ctx){
     return wrapper;
   });
 
-  define(ctx.Function.prototype, function toAST(showHidden, seen, identity){
+  define(ctx.Function.prototype, function toAST(showHidden, identity, seen){
     if (typeof seen === 'boolean') {
       identity = showHidden;
       showHidden = seen;
@@ -169,7 +169,7 @@ function astify(ctx){
         if (key !== 'prototype' && ('get' in desc || 'set' in desc || !desc.enumerable || !desc.configurable || !desc.writable))
           descs.push(key);
         else {
-          scope.body.append(create('MemberExpression', ret.argument, key).assign(makeAST(desc.value, showHidden, seen, key)));
+          scope.body.append(create('MemberExpression', ret.argument, key).assign(makeAST(desc.value, showHidden, key, seen)));
         }
       }
     }, this);
@@ -180,7 +180,7 @@ function astify(ctx){
   });
 
 
-  define(ctx.Object.prototype, function toAST(showHidden, seen, identity){
+  define(ctx.Object.prototype, function toAST(showHidden, identity, seen){
     if (typeof seen === 'boolean') {
       identity = showHidden;
       showHidden = seen;
@@ -207,10 +207,10 @@ function astify(ctx){
 
       var desc = ctx.Object.getOwnPropertyDescriptor(this, key);
       if (desc) {
-        desc.get && object.append(create('Property', 'get', key, makeAST(desc.get, showHidden, seen, key)));
-        desc.set && object.append(create('Property', 'set', key, makeAST(desc.set, showHidden, seen, key)));
+        desc.get && object.append(create('Property', 'get', key, makeAST(desc.get, showHidden, key, seen)));
+        desc.set && object.append(create('Property', 'set', key, makeAST(desc.set, showHidden, key, seen)));
         if ('value' in desc && desc.value !== undefined) {
-          object.append(create('Property', 'init', key, makeAST(desc.value, showHidden, seen, key)));
+          object.append(create('Property', 'init', key, makeAST(desc.value, showHidden, key, seen)));
         }
       }
     }, this);
