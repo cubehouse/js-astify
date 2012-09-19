@@ -189,7 +189,7 @@ Mixin.create('arrays', function(o, args){
     function filter(callback){
       var out = new ASTArray;
       for (var i=0; i < this[prop].length; i++)
-        if (callback.call(context, this[prop][i], i, this[prop]))
+        if (callback.call(this, this[prop][i], i, this[prop]))
           out.push[this[prop][i]];
 
       return out;
@@ -271,7 +271,7 @@ function Location(loc, range){
 }
 
 
-
+module.exports = ASTNode;
 // ################
 // ### ASTArray ###
 // ################
@@ -306,6 +306,11 @@ inherit(ASTArray, Array, [
       out[key] = this[key] instanceof ASTNode || this[key] instanceof ASTArray ? this[key].clone() : this[key];
     }, this);
     return out;
+  },
+  function toSource(){
+    return this.map(function(node){
+      return node.toSource();
+    }).join('\n');
   }
 ]);
 
@@ -413,7 +418,7 @@ define(ASTNode.prototype, [
     return out;
   },
   function visit(callback){
-    return new Visitor(this, callback).next();
+    return new Visitor(this, callback, function(o){ return o instanceof ASTNode || o instanceof ASTArray }).next();
   },
   function visitSome(filter, callback){
     return this.visit(function(node, parent){
@@ -425,7 +430,7 @@ define(ASTNode.prototype, [
   },
   function visitAll(callback){
     return this.visit(function(node, parent){
-      if (!callback.apply(this, arguments) === Visitor.BREAK)
+      if (callback.call(this, node, parent) !== Visitor.BREAK)
         return Visitor.RECURSE;
     });
   },
@@ -437,12 +442,20 @@ define(ASTNode.prototype, [
       }
     }
   },
+  function find(selector){
+    var out = new ASTArray;
+    this.visitAll(function(node, parent){
+      node.matches(selector) && out.push(node);
+    });
+    return out;
+  },
   function matches(filter){
     if (typeof filter === 'string') {
+      if (filter in ASTNode.types && this instanceof ASTNode.types[filter])
+        return true;
       if (filter.toLowerCase() === this.type.toLowerCase())
         return true;
-    }
-    if (typeof filter === 'function') {
+    } else if (typeof filter === 'function') {
       if (this instanceof filter)
         return true;
     }
@@ -1259,3 +1272,5 @@ nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, 'iife',
 define(ImmediatelyInvokedFunctionExpression.prototype, {
   type: 'CallExpression',
 });
+
+

@@ -9,3 +9,4 @@ module.exports = {
   AST: AST,
   ASTNode: require('./ASTNode')
 };
+

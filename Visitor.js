@@ -2,10 +2,12 @@ var define = require('./utility').define;
 
 module.exports = Visitor;
 
-function Visitor(ast, callback){
+function Visitor(ast, callback, filter){
   this.callback = callback;
   this.root = ast;
   this.stack = [];
+  this.items = [];
+  this.filter = filter || function(){ return true };
   this.queue(ast);
 }
 
@@ -15,8 +17,7 @@ Visitor.RECURSE = 2;
 
 define(Visitor.prototype, [
   function next(){
-    var key = this.items.pop()
-    var item = this.cursor[key];
+    var item = this.items.pop()
     if (item instanceof Array) {
       var result = Visitor.RECURSE;
     } else {
@@ -40,10 +41,8 @@ define(Visitor.prototype, [
   function queue(item){
     if (this.cursor && this.items.length)
       this.stack.push({ cursor: this.cursor, items: this.items });
-    this.cursor = item;
-    this.items = Object.keys(Object(item)).filter(function(key){
-      return item[key] instanceof Array;
-    });
+    item = this.cursor = Object(item);
+    this.items = Object.keys(Object(item)).map(function(s){ return item[s] }).filter(this.filter);
     return this;
   },
   function popstack(){

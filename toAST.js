@@ -14,7 +14,7 @@ function astify(ctx){
   function makeAST(o, showHidden, identity, seen){
     if (!isObject(o))
       return create('Literal', o);
-    else if (seen.has(o))
+    else if (seen && seen.has(o))
       return create('Identifier', seen.get(o));
     else if (typeof o.toAST === 'function')
       return o.toAST(showHidden, identity, seen);
@@ -53,7 +53,7 @@ function astify(ctx){
 
 
     if (desc) {
-      args.push(makeAST(desc, showHidden, seen));
+      args.push(makeAST(desc, showHidden, key, seen));
       return create('CallExpression', callee, args);
     } else {
       return create('Identifier');
