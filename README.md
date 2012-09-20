@@ -19,6 +19,15 @@ console.log(global.toAST().toSource()); // anything can be converted to AST
 * __astify.parseFile(filename)__: creates AST from sourcecode.
 * __astify.createNode(type, args...)__: creates an AST Node from scratch.
 
+## Selectors
+To select nodes you can use css-like syntax (work in progress) using __node.find(selector)__
+
+* 'function function function var' - descending selectors, this would filter to vars that are inside 3 nested functions.
+* 'function > id' - child selector requires nodes to be direct children
+* 'var.declarations' - select specific properties
+* 'function.params.id' - select multiple properties
+* 'function::scope' - select all the nodes in the current scope
+
 ### Node Creation
 An intro example to manually assembling nodes
 

@@ -10,7 +10,8 @@ var Visitor       = require('./Visitor'),
     isObject      = require('./utility').isObject,
     define        = require('./utility').define,
     inherit       = require('./utility').inherit,
-    gensym        = require('./utility').gensym;
+    gensym        = require('./utility').gensym,
+    parseSelector = require('./parse-selector');
 
 var _push = [].push,
     _unshift = [].unshift,
@@ -311,7 +312,10 @@ inherit(ASTArray, Array, [
     return this.map(function(node){
       return node.toSource();
     }).join('\n');
-  }
+  },
+  function visit(callback){
+    return new Visitor(this, callback, function(o){ return o instanceof ASTNode || o instanceof ASTArray }).next();
+  },
 ]);
 
 
@@ -443,11 +447,8 @@ define(ASTNode.prototype, [
     }
   },
   function find(selector){
-    var out = new ASTArray;
-    this.visitAll(function(node, parent){
-      node.matches(selector) && out.push(node);
-    });
-    return out;
+    var filter = compileSelector(selector);
+    return filter(this);
   },
   function matches(filter){
     if (typeof filter === 'string') {
@@ -1272,5 +1273,141 @@ nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, 'iife',
 define(ImmediatelyInvokedFunctionExpression.prototype, {
   type: 'CallExpression',
 });
+
+
+var combinators = {
+  ' ': function(filter, nodes){
+    var out = new ASTArray;
+    var seen = new Set;
+    nodes.forEach(function(node){
+      node.visit(function(subnode){
+        if (!seen.has(subnode) &&filter(subnode)) {
+          out.push(subnode);
+          seen.add(subnode);
+        }
+        return Visitor.RECURSE;
+      });
+    });
+    return out;
+  },
+  '>': function(filter, nodes){
+    var out = new ASTArray;
+      nodes.visit(function(n, parent){
+        console.log(n)
+        if (filter(n))
+          out.push(n);
+        return Visitor.CONTINUE;
+      });
+    return out;
+  }
+};
+
+var modifiers = {
+  '::': {
+    scope: function(nodes){
+      var out = new ASTArray;
+      nodes.visit(function(n, p){
+        if (ASTNode.isFunction(n))
+          return Visitor.CONTINUE;
+        out.push(n);
+        return Visitor.RECURSE;
+      });
+      return out;
+    }
+  },
+  '.': {
+
+  }
+};
+
+function identity(o){
+  return o;
+}
+
+function noop(o){}
+
+function debug(o){
+  //console.log.apply(console, arguments);
+}
+
+function compileSelector(selector){
+  var subselectors = parseSelector(selector).selectors[0].map(function(subselector){
+    debug(subselector);
+    if (subselector.modifiers || subselector.keys) {
+      var modifier = function(){
+        var mods = [];
+        if (subselector.modifiers) {
+          subselector.modifiers.forEach(function(mod){
+            if (mod.operator in modifiers)
+              mods.push(modifiers[mod.operator][mod.name]);
+            else
+              throw new Error('Unknown modifier operator "'+mod.operator+'"');
+          });
+        }
+        if (subselector.keys) {
+          var keymods = []
+          subselector.keys.forEach(function(key){
+            if (key in modifiers['.']) {
+              keymods.push(modifiers['.'][key]);
+            } else {
+              keymods.push(function(node){
+                if (key in node && node[key] !== null)
+                  return node[key];
+              });
+            }
+          });
+          mods.push(function(nodes){
+            var out = new ASTArray;
+            nodes.forEach(function(node){
+              var set = new ASTArray;
+              for (var i=0; i < keymods.length; i++) {
+                var val = keymods[i](node);
+                if (val) set.push(val);
+              }
+              if (set.length === 1)
+                out.push(set[0]);
+              else if (set.length > 1)
+                out.push(set);
+            });
+            return out;
+          });
+        }
+        return function(nodes){
+          for (var i=0; i < mods.length; i++)
+            nodes = mods[i](nodes);
+          return nodes;
+        };
+      }();
+    } else {
+      var modifier = identity;
+    }
+    var combinator = combinators[subselector.combinator];
+    if (subselector.name === '*') {
+      var filter = identity;
+    } else {
+      var filter = function(node){
+        var result = node.matches(subselector.name);
+        debug(result, node, subselector.name)
+        return result;
+      };
+    }
+
+    return function(nodes){
+      return modifier(combinator(filter, nodes))
+    };
+  });
+
+  debug(subselectors.toAST().toSource())
+
+  return function(node){
+    for (var i=0; i < subselectors.length; i++) {
+
+      node = subselectors[i](node);
+    }
+
+    return node;
+  };
+}
+
 
 
