@@ -2,15 +2,16 @@ var esprima   = require('esprima'),
     escodegen = require('escodegen'),
     inspect   = require('util').inspect;
 
-var Visitor         = require('./Visitor'),
-    Registry        = require('./utility').Registry,
-    options         = require('./options'),
-    Mixin           = require('./utility').Mixin,
-    createStorage   = require('./utility').createStorage,
-    isObject        = require('./utility').isObject,
-    define          = require('./utility').define,
-    inherit         = require('./utility').inherit,
-    gensym          = require('./utility').gensym;
+var Visitor       = require('./Visitor'),
+    options       = require('./options'),
+    utility       = require('./utility'),
+    Registry      = utility.Registry,
+    Mixin         = utility.Mixin,
+    createStorage = utility.createStorage,
+    isObject      = utility.isObject,
+    define        = utility.define,
+    inherit       = utility.inherit,
+    gensym        = utility.gensym;
 
 var _push    = [].push,
     _unshift = [].unshift,
@@ -239,16 +240,6 @@ function ASTArray(array){
 }
 
 inherit(ASTArray, Array, [
-  Array.prototype.push,
-  Array.prototype.pop,
-  Array.prototype.forEach,
-  Array.prototype.filter,
-  Array.prototype.concat,
-  Array.prototype.reduce,
-  Array.prototype.every,
-  Array.prototype.some,
-  Array.prototype.indexOf,
-  Array.prototype.splice,
   function map(callback, context){
     var out = new ASTArray;
     context = context || this;
