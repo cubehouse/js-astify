@@ -101,15 +101,6 @@ function space(n){
   return new Array(++n || 1).join(' ');
 }
 
-var q = ["'", '"'];
-var qMatch = [/(")/g, /(')/g];
-
-function escape(s){
-  s = (s+'').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
-  var qWith = +(s.match(qMatch[0]) === null);
-  return q[qWith] + s.replace(qMatch[1-qWith], '\\$1') + q[qWith];
-}
-
 
 function indent(string, amount){
   if (amount == null)
