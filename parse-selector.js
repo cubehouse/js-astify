@@ -39,21 +39,19 @@ function Combinator(combinator, name){
   this.name = name;
 }
 
-function AttributeSelector(key, operator, quote, value){
+function Filter(key, operator, quote, value){
   value = this.value = unescape(value);
   this.key = unescape(key);
-  this.operator = operator;
   this.test = {
-    '^=': tester(new RegExp('^'+escape(value))),
-    '$=': tester(new RegExp(escape(value) +'$')),
-    '~=': tester(new RegExp('(^|\\s)'+escape(value) +'(\\s|$)')),
-    '|=': tester(new RegExp('^'+escape(value)+'(-|$)')),
-     '=': function equal(v){ return value == v },
-    '*=': function has(v){ return v && v.indexOf(value) > -1 },
-    '!=': function different(v){ return value != v }
-  }[operator] || Boolean;
-  if (value == '' && (/^[*$^]=$/).test(operator))
-    this.test = Boolean.bind(0, 0);
+    '^=': 'startsWith',//tester(new RegExp('^'+escape(value))),
+    '$=': 'endsWith',//tester(new RegExp(escape(value) +'$')),
+    '~=': 'isSimilar',//tester(new RegExp('(^|\\s)'+escape(value) +'(\\s|$)')),
+    //'|=': ,//tester(new RegExp('^'+escape(value)+'(-|$)')),
+     '=': 'isSame',//function equal(v){ return value == v },
+    '*=': 'contains',//function has(v){ return v && v.indexOf(value) > -1 },
+    '!=': 'isDifferent',//function different(v){ return value != v }
+  }[operator];
+  this.operator = operator;
 }
 
 function ClassSelector(name){
@@ -159,8 +157,8 @@ function handler(raw, sep, combo, subcombo, tag, id, name, attr, attrOp, attrQ, 
     item.modifiers || (item.modifiers = []);
     item.modifiers.push(new Modifier(pseudo, pseudoV, pseudoQV, pseudoSep));
   } else if (attr) {
-    item.attributes || (item.attributes = []);
-    item.attributes.push(new AttributeSelector(attr, attrOp, attrQ, attrV));
+    item.filters || (item.filters = []);
+    item.filters.push(new Filter(attr, attrOp, attrQ, attrV));
   }
 
   return '';
