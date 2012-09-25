@@ -70,7 +70,7 @@ define(AST.prototype, [
     return escodegen.generate(this.ast, this.options);
   },
   function toJSON(){
-    return JSON.stringify(this.ast, null, '  ');
+    return this.ast.toJSON();
   },
   function saveJSON(file){
     fs.writeFileSync(file, this.toJSON());
