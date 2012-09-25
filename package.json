@@ -2,7 +2,7 @@
   "name": "astify",
   "version": "0.0.1",
   "description": "",
-  "main": "codegen.js",
+  "main": "astify.js",
   "repository": "",
   "author": "Brandon Benvie <http://bbenvie.com>"
 }
