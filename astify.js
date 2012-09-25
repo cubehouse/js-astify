@@ -10,3 +10,4 @@ module.exports = {
   ASTNode: require('./ASTNode'),
   ASTArray: require('./ASTNode').ASTArray
 };
+
