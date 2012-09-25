@@ -137,7 +137,7 @@ define(ASTNode.prototype, [
     return out;
   },
   function visit(callback){
-    return new Visitor(this, callback, function(o){ return o instanceof ASTNode || o instanceof ASTArray }).next();
+    return new Visitor(this, callback, ASTNode.isNode).next();
   },
   function visitSome(filter, callback){
     return this.visit(function(node, parent){
@@ -287,7 +287,7 @@ inherit(ASTArray, Array, [
     });
   },
   function visit(callback){
-    return new Visitor(this, callback, function(o){ return o instanceof ASTNode || o instanceof ASTArray }).next();
+    return new Visitor(this, callback, ASTNode.isNode).next();
   },
   function find(selector){
     var filter = compileSelector(selector);
@@ -385,7 +385,7 @@ function _hoist(from, to){
   var seen = {};
 
   from.visit(function(node, parent){
-    if (node instanceof FunctionDeclaration || node instanceof FunctionExpression)
+    if (node.matches('function'))
       return Visitor.CONTINUE;
     if (node instanceof VariableDeclaration) {
       var leftover = node.declarations.filter(function(decl){
@@ -406,8 +406,8 @@ function _hoist(from, to){
 
 function assertInstance(o, types){
   var err;
-  if (typeof o === 'string')
-    o = new Identifier(o);
+  if (typeof o === 'string' || typeof o === 'number' && isFinite(o))
+    o = new Identifier(o+'');
 
   if (typeof types === 'function') {
     if (types === Statement && o.toStatement)
@@ -457,16 +457,9 @@ Mixin.create('functions', function(o){
     function call(args){
       return new CallExpression(this, args);
     },
-    function matches(filter){
-      if (ASTNode.prototype.matches.call(this, filter))
-        return true;
-      if (filter === 'function')
-        return true;
-      return false;
-    },
     function visitLocal(visitor){
       return this.visit(function(node, parent){
-        if (node instanceof FunctionDeclaration || node instanceof FunctionExpression)
+        if (node.matches('function'))
           return Visitor.CONTINUE;
         else
           return visitor.apply(this, arguments);
@@ -483,7 +476,7 @@ Mixin.create('functions', function(o){
     },
     function declaration(name){
       if (this instanceof FunctionDeclaration)
-        return this;
+        return this.clone();
 
       if (!name) name = this.id ? this.id.name : this.identity;
       var decl = new VariableDeclaration;
@@ -503,6 +496,10 @@ Mixin.create('functions', function(o){
       var iife = new ImmediatelyInvokedFunctionExpression(scope);
       iife.identity = this.identity;
       return iife;
+    },
+    function returns(expr){
+      this.body.append(new ReturnStatement(expr));
+      return this;
     }
   ]);
 });
@@ -651,7 +648,7 @@ Mixin.create('classes', function(o){
       this.getMethods().forEach(function(method){
         prototype.set(method);
       });
-      return prototype.assign(this.id.get('prototype'));
+      return this.id.set('prototype', prototype);
     },
     function toFunction(){
       var self = this.clone(),
@@ -679,7 +676,6 @@ Mixin.create('classes', function(o){
 });
 
 
-
 // ##################
 // ### Expression ###
 // ##################
@@ -702,12 +698,26 @@ inherit(Expression, ASTNode, [
   function toStatement(){
     return new ExpressionStatement(this);
   },
-  function assign(obj, key){
+  function assignTo(obj, key){
+    if (typeof key === 'number' || typeof key === 'string')
+      key = new Identifier(key+'');
+
     if (typeof obj === 'string')
       obj = new MemberExpression(obj, key);
 
     if (obj instanceof MemberExpression)
       return new AssignmentExpression('=', obj, this);
+  },
+  function set(key, value){
+    if (typeof key === 'number' || typeof key === 'string')
+      key = new Identifier(key+'');
+    var self = new MemberExpression(this, key);
+    return new AssignmentExpression('=', self, value);
+  },
+  function get(key){
+    if (typeof key === 'number' || typeof key === 'string')
+      key = new Identifier(key+'');
+    return new MemberExpression(this, key);
   },
   function declaration(name){
     if (typeof name === 'string')
@@ -793,7 +803,7 @@ function AssignmentExpression(operator, left, right){
   this.right = assertInstance(right, Expression);
   prep(this);
 }
-nodeTypes.register(AssignmentExpression, Expression, 'assign', []);
+nodeTypes.register(AssignmentExpression, Expression, 'assignTo', []);
 AssignmentExpression.operators = ['=', '+=', '-=', '*=', '/=', '%=',
                                   '<<=', '>>=', '>>>=', '|=', '^=', '&='];
 
@@ -818,7 +828,8 @@ Mixin.use('arrays', ArrayExpression.prototype, {
 // ######################
 
 function BlockStatement(body){
-  this.body = new ASTArray(body);
+  this.body = new ASTArray;
+  body && this.append(body);
   prep(this);
 }
 nodeTypes.register(BlockStatement, Statement, 'block', []);
@@ -1037,7 +1048,11 @@ nodeTypes.register(ForInStatement, Statement, 'forin', []);
 // ### FunctionDeclaration ###
 // ###########################
 
-function FunctionDeclaration(id, body, params){ //generator, rest, defaults
+function FunctionDeclaration(id, params, body){ //generator, rest, defaults
+  if (id == null)
+    return new FunctionExpression(id, params, body);
+  if (params instanceof Array)
+    params = params.map(makeIdentifier);
   this.params = new ASTArray(params);
   this.id = makeIdentifier(id);
   if (!body || body instanceof Array)
@@ -1045,7 +1060,7 @@ function FunctionDeclaration(id, body, params){ //generator, rest, defaults
   this.body = assertInstance(body, [BlockStatement, Expression]);
   prep(this);
 }
-nodeTypes.register(FunctionDeclaration, Statement, 'functiondecl', [
+nodeTypes.register(FunctionDeclaration, Statement, ['function', 'functiondecl'], [
   function toExpression(){
     var out = Object.create(FunctionExpression.prototype);
     Object.keys(this).forEach(function(key){
@@ -1069,13 +1084,13 @@ Mixin.use('arrays', FunctionDeclaration.prototype, {
 // ### FunctionExpression ###
 // ##########################
 
-function FunctionExpression(id, body, params){
-  FunctionDeclaration.call(this, id || '', body, params);
+function FunctionExpression(id, params, body){
+  FunctionDeclaration.call(this, id || '', params, body);
   if (id == null)
     this.id = null;
   prep(this);
 }
-nodeTypes.register(FunctionExpression, Expression, 'functionexpr', [
+nodeTypes.register(FunctionExpression, Expression, ['function', 'functionexpr'], [
   function toDeclaration(){
     var out = Object.create(FunctionDeclaration.prototype);
     Object.keys(this).forEach(function(key){
@@ -1117,9 +1132,6 @@ nodeTypes.register(Identifier, Expression, 'ident', [
   },
   function isDifferent(value){
     return this.name != value;
-  },
-  function get(name){
-    return new MemberExpression(this, name);
   }
 ]);
 
@@ -1195,15 +1207,15 @@ LogicalExpression.operators = ['&&', '||'];
 function MemberExpression(object, property){
   this.object = assertInstance(object, Expression);
   this.property = assertInstance(property, Expression);
-  this.computed = !(this.property instanceof Literal || this.property instanceof Identifier);
+  this.computed = !(this.property instanceof Literal || this.property instanceof Identifier) || isFinite(this.property.name)
   prep(this);
 }
 nodeTypes.register(MemberExpression, Expression, 'member', [
-  function assign(value){
+  function assignTo(value){
     return new AssignmentExpression('=', this, value);
   },
-  function get(name){
-    return new MemberExpression(this, name);
+  function call(params){
+    return new CallExpression(this, params);
   }
 ]);
 
@@ -1289,7 +1301,8 @@ Mixin.use('arrays', ObjectExpression.prototype, {
 // ###############
 
 function Program(body, comments){
-  this.body = new ASTArray(body);
+  this.body = new ASTArray;
+  body && this.body.append(body);
 }
 nodeTypes.register(Program, ASTNode, 'program', [
   function hoist(){
@@ -1592,7 +1605,7 @@ function ImmediatelyInvokedFunctionExpression(func, args){
 
   CallExpression.call(this, func, args);
 }
-nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, 'iife', [
+nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, ['function', 'iife'], [
   function toSource(){
     return '('+CallExpression.prototype.toSource.call(this)+')';
   },
@@ -1633,9 +1646,63 @@ define(ImmediatelyInvokedFunctionExpression.prototype, {
 // function ArrayPattern(){}
 // nodeTypes.register(ArrayPattern, ASTNode, []);
 
-// function ArrowFunctionExpression(){}
-// nodeTypes.register(ArrowFunctionExpression, Expression, []);
 
+
+
+
+// ###############################
+// ### ArrowFunctionExpression ###
+// ###############################
+
+function ArrowFunctionExpression(params, body){
+  this.params = new ASTArray(params);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
+  this.body = assertInstance(body, [BlockStatement, Expression]);
+  prep(this);
+}
+nodeTypes.register(ArrowFunctionExpression, Expression, ['function', 'arrow'], [
+  function toDeclaration(){
+    return new FunctionDeclaration(this.identity, this.params, this.body);
+  },
+  function toExpression(){
+    if (!(this.body instanceof BlockStatement)) {
+      var body = new BlockStatement;
+      body.append(new ReturnStatement(this.body.clone()));
+
+    } else {
+      var body = this.body.clone();
+    }
+    var self = new FunctionExpression(null, this.params, body);
+    return self.get('bind').call([new ThisExpression]);
+  },
+  function becomeExpression(){
+    var parent = this.getParent();
+    var self = this.toExpression();
+    if (parent) {
+      for (var k in parent ) {
+        if (parent[k] === this) {
+          parent[k] = self;
+          _(self).parent = parent;
+          _(this).parent = null;
+          return;
+        }
+      }
+    }
+    return self;
+  }
+]);
+
+define(ArrowFunctionExpression, {
+  fromJSON: function fromJSON(json){
+    return new ArrowFunctionExpression(json.params, json.body.body);
+  }
+});
+Mixin.use('functions', ArrowFunctionExpression.prototype);
+define(ArrowFunctionExpression.prototype, {
+  get id(){ return null },
+  set id(v){ if (v) this.identity = typeof v === 'string' ? v : v.name }
+});
 
 
 // #################
