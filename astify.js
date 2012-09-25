@@ -7,6 +7,6 @@ module.exports = {
   },
   createNode: require('./ASTNode').createNode,
   AST: AST,
-  ASTNode: require('./ASTNode')
+  ASTNode: require('./ASTNode'),
+  ASTArray: require('./ASTNode').ASTArray
 };
-
