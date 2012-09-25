@@ -20,13 +20,19 @@ console.log(global.toAST().toSource()); // anything can be converted to AST
 * __astify.createNode(type, args...)__: creates an AST Node from scratch.
 
 ## Selectors
-To select nodes you can use css-like syntax (work in progress) using __node.find(selector)__
+To select nodes you can use css-like syntax (work in progress) using __node.find(selector)__. Some examples:
 
-* 'function function function var' - descending selectors, this would filter to vars that are inside 3 nested functions.
-* 'function > id' - child selector requires nodes to be direct children
-* 'var.declarations' - select specific properties
-* 'function.params.id' - select multiple properties
-* 'function::scope' - select all the nodes in the current scope
+* `function function function var` - descending selectors, this would filter to vars that are inside 3 nested functions.
+* `function > id` - child selector requires nodes to be direct children
+* `var.declarations` - select specific properties
+* `function.params.id` - select multiple properties
+* `function:scope` - select all the nodes in the current scope
+* `method[kind = ""][key != "constructor"].value` - selects methods (es6) with no kind (normal) where key is notEqual to constructor, then selectos its value property (a function expression).
+* `method[key = "constructor"].value:first` - selects the first method with the name "constructor" and returns its value (function expr)
+* `ident:first-child` - selects all identifiers that are first-children
+* `return:last-child` - select all return statements which are last children
+* `call[callee = "super"]` - select functions calls where the function name is "super"
+* `member[object=super]` - selects expressions that look like "super.prop"
 
 ### Node Creation
 An intro example to manually assembling nodes
@@ -73,49 +79,78 @@ var myAST = {
 
 And the AST:
 ```javascript
-{ kind: 'var',
- declarations:
-  [ { id: { name: 'myAST' },
-    init:
-    { properties:
-      [ { key: { name: 'a' }, value: { value: 50 }, kind: 'init' },
-       { key: { name: 'b' },
-        value:
-        { params: [],
-         id: null,
-         body:
-          { body:
-           [ { kind: 'var',
-             declarations:
-              [ { id: { name: 'somevar' }, init: { value: 5 } },
-               { id: { name: 'another' },
-                init:
-                { callee:
-                  { params: [],
-                   id: null,
-                   body: { body: [ { argument: { params: [], id: { name: 'another' }, body: { body: [] } } } ] } },
-                 arguments: [] } } ] } ] } },
-        kind: 'init' },
-       { key: { name: 'c' },
-        value:
-        { id: { name: 'hi' },
-         params: [],
-         body: { body: [ { argument: { value: 'stuff' } } ] } },
-        kind: 'init' },
-       { key: { name: 'd' },
-        value:
-        { id: { name: 'd' },
-         params: [],
-         body:
-          { body:
-           [ { argument:
-              { computed: false,
-               object:
-               { computed: false,
-                object: { name: 'this' },
-                property: { name: 'b' } },
-               property: { name: 'name' } } } ] } },
-        kind: 'get' } ] } } ] }
+{ type: 'ObjectExpression',
+  properties:
+   [ { type: 'Property',
+       key: { type: 'Identifier', name: 'a' },
+       value: { type: 'Literal', value: 50 },
+       kind: 'init' },
+     { type: 'Property',
+       key: { type: 'Identifier', name: 'b' },
+       value:
+        { type: 'FunctionExpression',
+          params: [],
+          id: null,
+          body:
+           { type: 'BlockStatement',
+             body:
+              [ { type: 'VariableDeclaration',
+                  kind: 'var',
+                  declarations:
+                   [ { type: 'VariableDeclarator',
+                       id: { type: 'Identifier', name: 'somevar' },
+                       init: { type: 'Literal', value: 5 } },
+                     { type: 'VariableDeclarator',
+                       id: { type: 'Identifier', name: 'another' },
+                       init:
+                        { type: 'CallExpression',
+                          callee:
+                           { type: 'FunctionExpression',
+                             params: [],
+                             id: null,
+                             body:
+                              { type: 'BlockStatement',
+                                body:
+                                 [ { type: 'ReturnStatement',
+                                     argument:
+                                      { type: 'FunctionExpression',
+                                        params: [],
+                                        id: { type: 'Identifier', name: 'another' },
+                                        body: { type: 'BlockStatement', body: [] } } } ] } },
+                          arguments: [] } } ] } ] } },
+       kind: 'init' },
+     { type: 'Property',
+       key: { type: 'Identifier', name: 'c' },
+       value:
+        { type: 'FunctionExpression',
+          id: { type: 'Identifier', name: 'hi' },
+          params: [],
+          body:
+           { type: 'BlockStatement',
+             body:
+              [ { type: 'ReturnStatement',
+                  argument: { type: 'Literal', value: 'stuff' } } ] } },
+       kind: 'init' },
+     { type: 'Property',
+       key: { type: 'Identifier', name: 'd' },
+       value:
+        { type: 'FunctionExpression',
+          id: { type: 'Identifier', name: 'd' },
+          params: [],
+          body:
+           { type: 'BlockStatement',
+             body:
+              [ { type: 'ReturnStatement',
+                  argument:
+                   { type: 'MemberExpression',
+                     computed: false,
+                     object:
+                      { type: 'MemberExpression',
+                        computed: false,
+                        object: { type: 'Identifier', name: 'this' },
+                        property: { type: 'Identifier', name: 'b' } },
+                     property: { type: 'Identifier', name: 'name' } } } ] } },
+       kind: 'get' } ] }
 
 ```
 
