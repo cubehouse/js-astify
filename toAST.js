@@ -1,10 +1,16 @@
 var AST      = require('./AST'),
-    create   = require('./ASTNode').createNode,
-    options  = require('./options'),
-    isObject = require('./utility').isObject,
-    define   = require('./utility').define,
-    gensym   = require('./utility').gensym,
-    inherit  = require('./utility').inherit;
+    options  = require('./options');
+
+var utility  = require('./utility'),
+    isObject = utility.isObject,
+    define   = utility.define,
+    gensym   = utility.gensym,
+    inherit  = utility.inherit;
+
+var ASTNode  = require('./ASTNode'),
+    ASTArray = ASTNode.ASTArray,
+    isNode   = ASTNode.isNode,
+    _        = ASTNode.createNode;
 
 
 module.exports = astify;
@@ -13,32 +19,27 @@ function astify(ctx){
   ctx = ctx || global;
   function makeAST(o, showHidden, identity, seen){
     if (!isObject(o))
-      return create('Literal', o);
+      return _('literal', o);
     else if (seen && seen.has(o))
-      return create('Identifier', seen.get(o));
+      return _('ident', seen.get(o));
     else if (typeof o.toAST === 'function')
       return o.toAST(showHidden, identity, seen);
     else
       return ctx.Object.prototype.toAST.call(o, showHidden, identity, seen);
   }
-  var O = {
-    defineProperty: create('MemberExpression', 'Object', 'defineProperty'),
-    defineProperties: create('MemberExpression', 'Object', 'defineProperty'),
-  };
-
 
   function definer(o, key, name, showHidden, seen){
     if (!name && typeof o === 'function')
       name = o.name;
 
-    var args = [create('Identifier', name)];
+    var args = new ASTArray([_('ident', name)]);
 
     if (key instanceof Array) {
       if (key.length === 1) {
         key = key.pop();
       } else {
         var desc = {};
-        var callee = O.defineProperties;
+        var callee = _('Object').get('defineProperties');
         key.forEach(function(key){
           desc[key] = ctx.Object.getOwnPropertyDescriptor(o, key);
         });
@@ -46,22 +47,22 @@ function astify(ctx){
     }
 
     if (typeof key === 'string') {
-      var callee = O.defineProperty;
+      var callee = _('Object').get('defineProperty');
       var desc = ctx.Object.getOwnPropertyDescriptor(o, key);
-      args.push(create('Literal', key));
+      args.push(_('literal', key));
     }
 
 
     if (desc) {
       args.push(makeAST(desc, showHidden, key, seen));
-      return create('CallExpression', callee, args);
+      return callee.call(args);
     } else {
-      return create('Identifier');
+      return _('literal', undefined);
     }
   }
 
   var primitiveToAST = function toAST(showHidden, identity, seen){
-    var out = create('Literal', this);
+    var out = _('literal', this);
     if (seen) {
       if (seen.has(this))
         return seen.get(this);
@@ -88,9 +89,9 @@ function astify(ctx){
 
     seen = seen || new Map;
     if (seen.has(this))
-      return create('Identifier', seen.get(this));
+      return _('ident', seen.get(this));
 
-    var array = create('ArrayExpression');
+    var array = _('array');
 
 
     identity && (array.identity = identity);
@@ -106,8 +107,7 @@ function astify(ctx){
     if (!keys.length) return array;
 
     var wrapper = array.scopedDeclaration();
-    var scope = wrapper.callee;
-    var ret = scope.body.pop();
+    var ret = wrapper.pop();
 
     var descs = [];
     keys.forEach(function(key){
@@ -117,12 +117,12 @@ function astify(ctx){
         if ('get' in desc || 'set' in desc || !desc.enumerable || !desc.configurable || !desc.writable)
           descs.push(key);
         else
-          scope.body.append(create('MemberExpression', ret.argument, key).assign(makeAST(desc.value, showHidden, key, seen)));
+          wrapper.append(ret.argument.set(key, makeAST(desc.value, showHidden, key, seen)));
       }
     }, this);
 
-    descs.length && scope.body.append(definer(this, descs, ret.argument, showHidden, seen));
-    scope.body.append(ret);
+    descs.length && wrapper.append(definer(this, descs, ret.argument, showHidden, seen));
+    wrapper.append(ret);
     return wrapper;
   });
 
@@ -139,7 +139,7 @@ function astify(ctx){
 
     seen = seen || new Map;
     if (seen.has(this))
-      return create('Identifier', seen.get(this));
+      return _('ident', seen.get(this));
 
     var func = new AST(1, this).ast;
 
@@ -159,8 +159,7 @@ function astify(ctx){
       return func.body[0].expression;
 
     var wrapper = func.body[0].expression.scopedDeclaration();
-    var scope = wrapper.callee;
-    var ret = scope.body.pop();
+    var ret = wrapper.pop();
 
     var descs = [];
     keys.forEach(function(key){
@@ -168,14 +167,16 @@ function astify(ctx){
       if (desc) {
         if (key !== 'prototype' && ('get' in desc || 'set' in desc || !desc.enumerable || !desc.configurable || !desc.writable))
           descs.push(key);
-        else {
-          scope.body.append(create('MemberExpression', ret.argument, key).assign(makeAST(desc.value, showHidden, key, seen)));
-        }
+        else
+          wrapper.append(ret.argument.set(key, makeAST(desc.value, showHidden, key, seen)));
       }
     }, this);
 
-    descs.length && scope.body.append(definer(this, descs, ret.argument, showHidden, seen));
-    scope.body.append(ret);
+    if (descs.length) {
+      var defs = definer(this, descs, ret.argument, showHidden, seen);
+      wrapper.append(defs);
+    }
+    wrapper.append(ret);
     return wrapper;
   });
 
@@ -193,10 +194,10 @@ function astify(ctx){
 
     seen = seen || new Map;
     if (seen.has(this))
-      return create('Identifier', seen.get(this));
+      return _('ident', seen.get(this));
 
 
-    var object = create('ObjectExpression');
+    var object = _('object');
     identity && (object.identity = identity);
     seen.set(this, object.identity);
 
@@ -207,10 +208,14 @@ function astify(ctx){
 
       var desc = ctx.Object.getOwnPropertyDescriptor(this, key);
       if (desc) {
-        desc.get && object.append(create('Property', 'get', key, makeAST(desc.get, showHidden, key, seen)));
-        desc.set && object.append(create('Property', 'set', key, makeAST(desc.set, showHidden, key, seen)));
-        if ('value' in desc && desc.value !== undefined) {
-          object.append(create('Property', 'init', key, makeAST(desc.value, showHidden, key, seen)));
+        desc.get && object.append(_('property', 'get', key, makeAST(desc.get, showHidden, key, seen)));
+        desc.set && object.append(_('property', 'set', key, makeAST(desc.set, showHidden, key, seen)));
+        if ('value' in desc && desc.value !== undefined && desc.value !== ASTNode) {
+          try {
+            object.append(_('property', 'init', key, makeAST(desc.value, showHidden, key, seen)));
+          } catch (e) {
+            console.log(desc.value)
+          }
         }
       }
     }, this);
