@@ -200,7 +200,7 @@ function compileSelector(selector){
   return function(node){
     for (var i=0; i < subselectors.length; i++)
       node = subselectors[i](node);
-    return node;
+    return Array.prototype.reverse.call(node);
   };
 }
 
