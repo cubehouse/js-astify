@@ -41,16 +41,13 @@ function AST(type, origin, code, options){
     throw new Error('Unable to determine where the code is');
 
   var raw = esprima.parse(this.code, options || {
-    loc: true,
-    range: true,
+    loc: false,
+    range: false,
     raw: false,
     tokens: false,
     comment: false,
   });
-  if (raw)
-    this.ast = new ASTNode(raw);
-  else
-    this.ast = ASTNode.createNode('Program', [ASTNode.createNode('ExpressionStatement', ASTNode.createNode('FunctionExpression'))]);
+  this.ast = ASTNode(raw);
   this.options = opt.codegen();
 }
 
