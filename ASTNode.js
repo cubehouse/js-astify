@@ -77,13 +77,13 @@ define(ASTNode, [
       else if (nodeTypes.lookup(type))
         var Ctor = nodeTypes.lookup(type);
       else
-        return new Identifier(type);
+        return $('#ident', type);
     }
 
     if (Ctor)
       return new Ctor(arguments[1], arguments[2], arguments[3], arguments[4], arguments[5]);
     else if (isObject(type))
-      return new ObjectExpression(type);
+      return $('#object', type);
     else
       throw new TypeError('Unknown AST Node type "'+type+'"');
   },
@@ -408,23 +408,17 @@ function prep(o){
 
 function parse(s){
   if (typeof s === 'function')
-    return jsonToAST(esprima.parse('('+s+')').body[0].expression);
-  else
-    return jsonToAST(esprima.parse(s).body[0].expression);
-}
-
-
-function functionAST(f){
-  return jsonToAST(esprima.parse('('+f+')').body[0].expression);
+    s = '('+s+')';
+  return jsonToAST(esprima.parse(s).body[0].expression);
 }
 
 function makeIdentifier(o){
   if (typeof o === 'string')
-    return new Identifier(o);
+    return $('#ident', o);
   else if (o instanceof Literal)
-    return new Identifier(o.value);
+    return $('#ident', o.value);
   else if (o instanceof Identifier)
-    return new Identifier(o.name);
+    return $('#ident', o.name);
   else
     return assertInstance(o, Identifier);
 }
@@ -438,13 +432,13 @@ function keyNeedsQuotes(key){
 }
 
 function _hoist(from, to){
-  var decls = new VariableDeclaration;
+  var decls = $('#var');
   var seen = {};
 
   from.visit(function(node, parent){
     if (node.matches('function'))
       return Visitor.CONTINUE;
-    if (node instanceof VariableDeclaration) {
+    if (node.matches('var')) {
       var leftover = node.declarations.filter(function(decl){
         if (decl.id.name in seen)
           return true;
@@ -464,7 +458,7 @@ function _hoist(from, to){
 function assertInstance(o, types){
   var err;
   if (typeof o === 'string' || typeof o === 'number' && isFinite(o))
-    o = new Identifier(o+'');
+    o = $('#ident', o+'');
 
   if (typeof types === 'function') {
     if (types === Statement && o.toStatement)
@@ -498,11 +492,11 @@ Mixin.create('functions', function(o){
       if (arguments.length > 1)
         vars = new ASTArray(_slice.call(arguments));
 
-      var decls = this.body.select('VariableDeclaration');
+      var decls = this.body.find('var');
       if (decls.length) {
         var decl = decls[0];
       } else {
-        var decl = new VariableDeclaration('var');
+        var decl = $('#var', 'var');
         this.body.prepend(decl)
       }
       decl.declare(vars);
@@ -512,7 +506,7 @@ Mixin.create('functions', function(o){
       _hoist(this, this.body);
     },
     function call(args){
-      return new CallExpression(this, args);
+      return $('#call', this, args);
     },
     function visitLocal(visitor){
       return this.visit(function(node, parent){
@@ -536,12 +530,12 @@ Mixin.create('functions', function(o){
         return this.clone();
 
       if (!name) name = this.id ? this.id.name : this.identity;
-      var decl = new VariableDeclaration;
+      var decl = $('#var');
       decl.declare(name, this instanceof Expression ? this : this.toExpression());
       return decl;
     },
     function scopedDeclaration(name){
-      var scope = new FunctionExpression;
+      var scope = $('#functionexpr');
 
       if (name || !this.id)
         var decl = this.declaration(name);
@@ -549,14 +543,14 @@ Mixin.create('functions', function(o){
         var decl = this.toDeclaration();
 
       scope.body.append(decl);
-      scope.body.append(new ReturnStatement(decl.id));
-      var iife = new ImmediatelyInvokedFunctionExpression(scope);
+      scope.body.append($('#return', decl.id));
+      var iife = $('#iife', scope);
       iife.identity = this.identity;
       prep(scope.body);
       return iife;
     },
     function returns(expr){
-      this.body.append(parent(new ReturnStatement(expr), this.body));
+      this.body.append(parent($('#return', expr), this.body));
       return this;
     }
   ]);
@@ -698,27 +692,27 @@ inherit(Expression, ASTNode, [
       return this.declaration(obj);
     }
     if (typeof key === 'number' || typeof key === 'string')
-      key = new Identifier(key+'');
+      key = $('#ident', key+'');
 
     if (typeof obj === 'string')
-      obj = new MemberExpression(obj, key);
+      obj = $('#member', obj, key);
 
     if (obj instanceof MemberExpression)
-      return new AssignmentExpression('=', obj, this);
+      return $('#assign', '=', obj, this);
   },
   function set(key, value){
     if (typeof key === 'number' || typeof key === 'string')
-      key = new Identifier(key+'');
-    var self = new MemberExpression(this, key);
-    return new AssignmentExpression('=', self, value);
+      key = $('#ident', key+'');
+    var self = $('#member', this, key);
+    return $('#assign', '=', self, value);
   },
   function get(key){
     if (typeof key === 'number' || typeof key === 'string')
-      key = new Identifier(key+'');
-    return new MemberExpression(this, key);
+      key = $('#ident', key+'');
+    return $('#member', this, key);
   },
   function call(args){
-    return new CallExpression(this, args);
+    return $('#call', this, args);
   },
   function declaration(name){
     if (typeof name === 'string')
@@ -726,15 +720,15 @@ inherit(Expression, ASTNode, [
     else if (name instanceof Identifier)
       this.identity = name.name;
 
-    var decl = new VariableDeclaration;
+    var decl = $('#var');
     decl.declare(this.identity, this);
     return decl;
   },
   function scopedDeclaration(name){
-    var scope = new FunctionExpression;
+    var scope = $('#functionexpr');
     scope.body.append(this.declaration(name));
-    scope.body.append(new ReturnStatement(this.identity));
-    var iife = new ImmediatelyInvokedFunctionExpression(scope);
+    scope.body.append($('#return', this.identity));
+    var iife = $('#iife', scope);
     iife.identity = this.identity;
     return iife;
   }
@@ -784,9 +778,9 @@ inherit(Statement, ASTNode);
 
 function Declaration(type){
   if (type === 'var' || type === 'VariableDeclaration' || type == 'Variable')
-    return new VariableDeclaration(arguments[1], arguments[2]);
+    return $('#var', arguments[1], arguments[2]);
   else
-    return new FunctionDeclaration(arguments[1], arguments[2], arguments[3]);
+    return $('#functiondecl', arguments[1], arguments[2], arguments[3]);
 }
 
 inherit(Declaration, Statement);
@@ -804,7 +798,7 @@ function AssignmentExpression(operator, left, right){
   this.right = assertInstance(right, Expression);
   prep(this);
 }
-nodeTypes.register(AssignmentExpression, Expression, 'assignTo', []);
+nodeTypes.register(AssignmentExpression, Expression, 'assign', []);
 AssignmentExpression.operators = ['=', '+=', '-=', '*=', '/=', '%=',
                                   '<<=', '>>=', '>>>=', '|=', '^=', '&='];
 
@@ -838,14 +832,14 @@ define(BlockStatement, [
     if (from instanceof BlockStatement)
       return from;
     else if (!from || from instanceof ASTArray) {
-      var out = new BlockStatement;
+      var out = $('#block');
       out.body = from;
       prep(out);
       return out;
     } else if (!from || from instanceof Array) {
-      return new BlockStatement(from);
+      return $('#block', from);
     } else {
-      var out = new BlockStatement;
+      var out = $('#block');
       out.append(from);
       return out;
     }
@@ -892,19 +886,19 @@ nodeTypes.register(BreakStatement, Statement, 'break', []);
 
 function CallExpression(callee, arguments){
   if (callee instanceof FunctionExpression && !(this instanceof ImmediatelyInvokedFunctionExpression))
-    return new ImmediatelyInvokedFunctionExpression(callee, arguments)
+    return $('#iife', callee, arguments)
 
   this.callee = assertInstance(callee, Expression);
   if (arguments instanceof Array) {
     arguments = arguments.map(function(arg){
       if (!isObject(arg))
-        return new Literal(arg);
+        return $('#literal', arg);
       else if ('type' in arg)
         return arg;
       else if (typeof arg === 'function')
-        return functionAST(arg);
+        return parse(arg);
       else
-        return new ObjectExpression(arg);
+        return $('#object', arg);
     });
   }
   this.arguments = new ASTArray(arguments);
@@ -939,7 +933,7 @@ define(CallExpression.prototype, {
   },
   set receiver(v){
     if (!v || v === 'this')
-      v = new ThisExpression;
+      v = $('#this');
     else if (!isNode(v))
       v = $(v);
 
@@ -960,7 +954,7 @@ define(CallExpression.prototype, {
 function CatchClause(param, body){
   this.param = assertInstance(param, Identifier);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, BlockStatement);
   prep(this);
 }
@@ -999,7 +993,7 @@ nodeTypes.register(ContinueStatement, Statement, 'continue', []);
 function DoWhileStatement(test, body){
   this.test = assertInstance(test, Expression);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, Statement);
   prep(this);
 }
@@ -1042,7 +1036,7 @@ function ForStatement(init, test, update, body){
   this.test = assertInstance(test, [null, Expression]);
   this.update = assertInstance(update, [null, Expression]);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, Statement);
   prep(this);
 }
@@ -1058,7 +1052,7 @@ function ForInStatement(left, right, body){
   this.left = assertInstance(left, [VariableDeclaration, Expression]);
   this.right = assertInstance(right, Expression);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, Statement);
   prep(this);
 }
@@ -1071,13 +1065,13 @@ nodeTypes.register(ForInStatement, Statement, 'forin', []);
 
 function FunctionDeclaration(id, params, body){ //generator, rest, defaults
   if (id == null)
-    return new FunctionExpression(id, params, body);
+    return $('#functionexpr', id, params, body);
   if (params instanceof Array)
     params = params.map(makeIdentifier);
   this.params = new ASTArray(params);
   this.id = makeIdentifier(id);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, [BlockStatement, Expression]);
   prep(this);
 }
@@ -1159,22 +1153,22 @@ nodeTypes.register(Identifier, Expression, 'ident', [
     return this.name != value;
   },
   function SET(value){
-    return new AssignmentExpression('=', this.clone(), value);
+    return $('#assign', '=', this.clone(), value);
   },
   function OR(right){
-    return new LogicalExpression('||', this.clone(), right);
+    return $('#logical', '||', this.clone(), right);
   },
   function AND(right){
-    return new LogicalExpression('&&', this.clone(), right);
+    return $('#logical', '&&', this.clone(), right);
   },
   function IN(right){
-    return new BinaryExpression('in', this.clone(), right);
+    return $('#binary', 'in', this.clone(), right);
   },
   function keyOf(object){
-    return new MemberExpression(object, this.clone(), true);
+    return $('#member', object, this.clone(), true);
   },
   function DELETE(from){
-    return new UnaryExpression('delete', this.keyOf(object));
+    return $('#unary', 'delete', this.keyOf(object));
   }
 ]);
 
@@ -1186,7 +1180,7 @@ nodeTypes.register(Identifier, Expression, 'ident', [
 function IfStatement(test, consequent, alternate){
   this.test = assertInstance(test, Expression);
   if (!consequent || consequent instanceof Array)
-    consequent = new BlockStatement(consequent);
+    consequent = $('#block', consequent);
   this.consequent = assertInstance(consequent, Statement);
   this.alternate = assertInstance(alternate, [null, Statement]);
   prep(this);
@@ -1223,7 +1217,7 @@ nodeTypes.register(Literal, Expression, 'literal', [
 function LabeledStatement(label, body){
   this.label = makeIdentifier(label);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, Statement);
   prep(this);
 }
@@ -1260,10 +1254,10 @@ function MemberExpression(object, property, computed){
 }
 nodeTypes.register(MemberExpression, Expression, 'member', [
   function assignTo(value){
-    return new AssignmentExpression('=', this, value);
+    return $('#assign', '=', this, value);
   },
   function call(params){
-    return new CallExpression(this, params);
+    return $('#call', this, params);
   }
 ]);
 
@@ -1301,19 +1295,19 @@ Mixin.create('object', function(o){
         Object.keys(o).forEach(function(key){
           var desc = Object.getOwnPropertyDescriptor(o, key);
           if (desc) {
-            if (desc.set) this.append(new Property('set', key, functionAST(desc.set)));
-            if (desc.get) this.append(new Property('get', key, functionAST(desc.get)))
+            if (desc.set) this.append($('#property', 'set', key, parse(desc.set)));
+            if (desc.get) this.append($('#property', 'get', key, parse(desc.get)))
             if ('value' in desc) this.set(key, desc.value);
           }
         }, this);
         return this;
       } else if (typeof key === 'string') {
         if (!isObject(value))
-          value = new Literal(value);
+          value = $('#literal', value);
         else if (typeof value === 'function')
-          value = functionAST(value);
+          value = parse(value);
         if (value instanceof ASTNode && !(value instanceof Property))
-          value = new Property('init', key, value);
+          value = $('#property', 'init', key, value);
 
         if (value instanceof Property)
           this.append(value)
@@ -1381,11 +1375,11 @@ Mixin.use('arrays', Program.prototype, {
 
 function Property(kind, key, value){
   if (typeof key === 'string')
-    this.key = keyNeedsQuotes(key) ? new Literal(key) : new Identifier(key);
+    this.key = keyNeedsQuotes(key) ? $('#literal', key) : $('#ident', key);
   else
     this.key = key;
   if (!isObject(value))
-    value = new Literal(value);
+    value = $('#literal', value);
 
   this.value = assertInstance(value, [Expression, Literal]);
   if (!_(this.value).identity)
@@ -1401,7 +1395,7 @@ nodeTypes.register(Property, ASTNode, 'property', [
     return this;
   },
   function rename(name){
-    this.key = new Identifier(name);
+    this.key = $('#ident', name);
     if (this.kind === 'init') {
       if (this.value) {
         if (this.value.id)
@@ -1453,10 +1447,16 @@ Mixin.use('arrays', SequenceExpression.prototype, {
 // #######################
 // ### SwitchStatement ###
 // #######################
-
-function SwitchStatement(descriminant, cases){
-  this.descriminant = assertInstance(descriminant, Expression);
-  this.cases = new ASTArray(cases);
+function SwitchStatement(discriminant, cases){
+  this.discriminant = assertInstance(discriminant, Expression);
+  if (cases instanceof ASTArray)
+    this.cases = cases;
+  else if (cases instanceof Array)
+    this.cases = new ASTArray(cases);
+  else {
+    this.cases = new ASTArray;
+    this.append(cases);
+  }
   prep(this);
 }
 nodeTypes.register(SwitchStatement, Statement, 'switch', []);
@@ -1508,7 +1508,7 @@ nodeTypes.register(ThrowStatement, Statement, 'throw', []);
 
 function TryStatement(block, handlers, finalizer){
   if (!block || block instanceof Array)
-    block = new BlockStatement(block);
+    block = $('#block', block);
   this.block = assertInstance(block, BlockStatement);
   this.handlers = new ASTArray(handlers);
   prep(this);
@@ -1586,11 +1586,11 @@ nodeTypes.register(VariableDeclaration, Declaration, 'var', [
         else if (vars[k] === undefined)
           var item = null
         else if (!isObject(vars[k]))
-          var item = new Literal(vars[k])
+          var item = $('#literal', vars[k])
         else if (typeof vars[k] === 'function')
-          var item = functionAST(vars[k]);
+          var item = parse(vars[k]);
         else if (Object.getPrototypeOf(vars[k]) === Object.prototype)
-          var item = new ObjectExpression(vars[k]);
+          var item = $('#object', vars[k]);
         if (item === null || item instanceof ASTNode)
           this.append(new VariableDeclarator(k, item));
       }
@@ -1632,7 +1632,7 @@ nodeTypes.register(VariableDeclarator, ASTNode, 'decl', []);
 function WhileStatement(test, body){
   this.test = assertInstance(test, Expression);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, Statement);
   prep(this);
 }
@@ -1647,7 +1647,7 @@ nodeTypes.register(WhileStatement, Statement, 'while', []);
 function WithStatement(object, body){
   this.object = assertInstance(object, Expression);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, Statement);
   prep(this);
 }
@@ -1666,7 +1666,7 @@ function ImmediatelyInvokedFunctionExpression(func, arguments){
     func = null;
   }
   if (!func)
-    func = new FunctionExpression;
+    func = $('#functionexpr');
 
   CallExpression.call(this, func, arguments);
 }
@@ -1694,11 +1694,11 @@ nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, ['funct
   },
   function addArgument(arg){
     if (typeof arg === 'string') {
-      arg = new Identifier(arg);
+      arg = $('#ident', arg);
     } else if (!isObject(arg)) {
-      arg = new Literal(arg);
+      arg = $('#literal', arg);
       this.callee.params.append(arg.identity);
-      this.arguments.append(new Literal(arg));
+      this.arguments.append($('#literal', arg));
       return this;
     }
     this.callee.params.append(arg);
@@ -1706,7 +1706,7 @@ nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, ['funct
     return this;
   },
   function returns(name){
-    this.callee.body.append(new ReturnStatement(name));
+    this.callee.body.append($('#return', (name)));
     return this;
   }
 ]);
@@ -1742,24 +1742,17 @@ Mixin.use('arrays', ArrayPattern.prototype, {
 function ArrowFunctionExpression(params, body){
   this.params = new ASTArray(params);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, [BlockStatement, Expression]);
   prep(this);
 }
 nodeTypes.register(ArrowFunctionExpression, Expression, ['function', 'arrow'], [
   function toDeclaration(){
-    return new FunctionDeclaration(this.identity, this.params, this.body);
+    return $('#functiondecl', this.identity, this.params, this.body);
   },
   function toExpression(){
-    if (!(this.body instanceof BlockStatement)) {
-      var body = new BlockStatement;
-      body.append(new ReturnStatement(this.body.clone()));
-
-    } else {
-      var body = this.body.clone();
-    }
-    var self = new FunctionExpression(null, this.params, body);
-    return self.get('bind').call([new ThisExpression]);
+    var body = this.body.matches('block') ? this.body : $('#block').append($('#return', this.body));
+    return $('#function', null, this.params, body).get('bind').call([$('#this')]);
   },
   function desugar(){
     this.replaceWith(this.toExpression());
@@ -1784,7 +1777,7 @@ Mixin.create('classes', function(o){
     },
     set inherits(v){
       if (typeof v === 'string')
-        v = new Identifier(v);
+        v = $('#ident', v);
       if (isNode(v)) {
         if (v instanceof Identifier) {
           this.superClass = v;
@@ -1807,7 +1800,7 @@ Mixin.create('classes', function(o){
       return this.find('method[kind != ""]');
     },
     function generatePrototype(){
-      var prototype = new ObjectExpression({ constructor: this.id });
+      var prototype = $('#object', { constructor: this.id });
       this.findAccessors().forEach(function(accessor){
         prototype.append(accessor.toProperty());
       });
@@ -1830,21 +1823,20 @@ Mixin.create('classes', function(o){
       return this;
     },
     function toFunction(){
-      var self = this.clone(),
-          ctor = self.findConstructor();
+      var ctor = this.findConstructor();
 
-      ctor.id = self.id || this.identity;
+      ctor.id = this.id || this.identity;
 
-      if (self.superClass)
-        self.desugarSuper();
+      if (this.superClass)
+        this.desugarSuper();
 
       var closure = ctor.scopedDeclaration();
       var ret = closure.pop();
 
-      if (self.superClass)
-        closure.addArgument(self.superClass);
+      if (this.superClass)
+        closure.addArgument(this.superClass);
 
-      closure.append(self.generatePrototype());
+      closure.append(this.generatePrototype());
       closure.append(ret);
 
       prep(closure.callee);
@@ -1933,7 +1925,7 @@ function MethodDefinition(key, value, kind){
 }
 nodeTypes.register(MethodDefinition, ASTNode, 'method', [
   function toProperty(){
-    return new Property(this.kind || 'get', this.key.clone(), this.value.clone());
+    return $('#property', this.kind || 'get', this.key.clone(), this.value.clone());
   }
 ]);
 
@@ -2017,7 +2009,7 @@ function ForOfStatement(left, right, body){
   this.left = assertInstance(left, [VariableDeclaration, Expression]);
   this.right = assertInstance(right, Expression);
   if (!body || body instanceof Array)
-    body = new BlockStatement(body);
+    body = $('#block', body);
   this.body = assertInstance(body, Statement);
   prep(this);
 }
@@ -2081,7 +2073,7 @@ nodeTypes.register(ModuleDeclaration, Declaration, 'module', [
     this.find('export').forEach(function(item){
       item.desugar();
     });
-    var closure = new FunctionExpression(null, ['global', 'exports'], this.body);
+    var closure = $('#functionexpr', null, ['global', 'exports'], this.body);
     var args = [$('#this'), $('#this'), parse('typeof exports === "undefined" ? {} : exports')];
     closure.returns('exports');
     return this.replaceWith(freeze.call(closure.get('call').call(args)).declaration(this.id));
@@ -2159,7 +2151,7 @@ function QuasiLiteral(quasis, expressions){
   }
   this.quasis = quasis instanceof ASTArray ? quasis : new ASTArray(quasis);
   this.expressions = new ASTArray(expressions).map(function(expr){
-    return new Identifier(expr.name);
+    return $('#ident', expr.name);
   });
   prep(this);
 }
@@ -2170,7 +2162,7 @@ nodeTypes.register(QuasiLiteral, Expression, ['quasi', 'quasiliteral'], [
 
 
     for (var i=0; i < this.quasis.length; i++) {
-      components.append(freeze.call(new ObjectExpression(this.quasis[i].value)));
+      components.append(freeze.call($('#object', this.quasis[i].value)));
     }
 
     var identity = $(this.identity);
@@ -2187,7 +2179,7 @@ nodeTypes.register(QuasiLiteral, Expression, ['quasi', 'quasiliteral'], [
 var freeze = $('Object').get('freeze');
 
 
-var QUASI = functionAST(function(r){
+var QUASI = parse(function(r){
   for (var i=0, o=''; r[i]; o += r[i].raw + (++i === r.length ? '' : arguments[i]));
   return o;
 });
