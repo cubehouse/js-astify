@@ -9,10 +9,11 @@ function desugar(selector){
       item.desugar();
   });
 }
-desugar('module');
 desugar('class');
 desugar('taggedquasi');
 desugar('quasi');
+desugar('module');
+
 
 
 

@@ -40,7 +40,7 @@ module geometry {
   }
 
 
-  export var Point = class Point {
+  export class Point {
     constructor(x, y){
       this.length = 2;
       this.set(x, y);
@@ -199,7 +199,7 @@ module geometry {
   }
 
 
-  export var Line = class Line {
+  export class Line {
     constructor(x1, y1, x2, y2){
       this.length = 4;
       this.set(x1, y1, x2, y2);
@@ -343,7 +343,7 @@ module geometry {
     }
   }
 
-  export var Rect = class Rect {
+  export class Rect {
     constructor(left, top, width, height){
       this.length = 4;
       this.set(left, top, width, height);
