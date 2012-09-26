@@ -50,37 +50,7 @@ function ASTNode(json){
   if (typeof json === 'string')
     return ASTNode.createNode.apply(null, arguments);
 
-  if ('loc' in json)
-    var loc = new Location(json.loc, json.range);
-  var ret = nodeTypes.lookup(json.type).fromJSON(json);
-
-  loc && define(ret, 'location', loc);
-
-  delete ret.loc;
-  delete ret.range;
-  if ('rest' in ret) {
-    delete ret.rest;
-    delete ret.generator;
-    delete ret.expression;
-    delete ret.defaults;
-  }
-
-  for (var k in json) {
-    if (k in skip) {
-      delete ret[k];
-    } else if (json[k]) {
-      if (json[k].type) {
-        ret[k] = parent(ASTNode(json[k]), ret);
-      } else if (json[k] instanceof Array) {
-        ret[k] = new ASTArray(json[k].map(function(item){
-          if (item.type)
-            return parent(ASTNode(item), ret[k]);
-        }));
-      }
-    }
-  }
-
-  return ret;
+  return jsonToAST(json);
 }
 
 
@@ -225,6 +195,21 @@ define(ASTNode.prototype, [
         out[key] = new ASTArray(this[key]);
     }, this);
     return out;
+  },
+  function replaceWith(replacement) {
+    var parent = this.getParent();
+    if (parent) {
+      for (var k in parent) {
+        if (parent[k] === this) {
+          parent[k] = replacement;
+          _(this).parent = null;
+          _(replacement).parent = parent;
+          return this;
+        }
+      }
+    } else {
+      console.log(this.type)
+    }
   }
 ]);
 
@@ -238,7 +223,16 @@ function ASTArray(array){
   define(this, 'length', 0)
   this.push.apply(this, array);
 }
-
+define(ASTArray, [
+  function fromJSON(json){
+    if (json instanceof Array) {
+      var out = new ASTArray;
+      for (var i=0; i < json.length; i++)
+        out.push(parent(jsonToAST(json[i]), out));
+      return out;
+    }
+  }
+]);
 inherit(ASTArray, Array, [
   function map(callback, context){
     var out = new ASTArray;
@@ -296,12 +290,6 @@ inherit(ASTArray, Array, [
   function matches(){
     return false;
   },
-  function lockToEnd(item){
-    if (typeof item === 'number' && item < this.length)
-      item = this[item];
-    _(this).atEnd = item;
-    return this;
-  },
   function firstChild(){
     for (var i=0; i < this.length; i++)
       if (ASTNode.isNode(this[i]))
@@ -314,37 +302,48 @@ inherit(ASTArray, Array, [
   },
 ]);
 
+function jsonToAST(item){
+  if (item instanceof Array) {
+    return ASTArray.fromJSON(item);
+  } else if (item && item.type) {
+    var Type = nodeTypes.lookup(item.type);
+    if (Type)
+      return Type.fromJSON(item);
+  }
+  return item;
+}
+
+function fromJSON(json){
+  var params = this.fields.map(function(field){
+    return jsonToAST(json[field]);
+  });
+  var ret = new this(params[0], params[1], params[2], params[3], params[4], params[5]);
+  if ('loc' in json) sourceLocations.set(ret, new Location(json.loc, json.range));
+  return ret;
+}
 
 var nodeTypes = new Registry;
+var sourceLocations = new WeakMap;
 
 define(ASTNode, 'registry', nodeTypes);
 ASTNode.types = {};
 
+
 nodeTypes.on('register', function(name, Ctor, args){
   var Super = args[0],
       props = args[2],
-      shortnames = [].concat(args[1]);
+      shortnames = [].concat(args[1]),
+      src = Ctor+'';
+
   inherit(Ctor, Super, props);
   define(Ctor.prototype, { type: name });
-  define(Ctor, [
-    function fromJSON(json){
-      json.__proto__ = Ctor.prototype;
-      delete json.type;
-      delete json.loc;
-      delete json.range;
-      if ('rest' in json) {
-        delete json.rest;
-        delete json.generator;
-        delete json.expression;
-        delete json.defaults;
-      }
-      return json;
-    }
-  ]);
+  define(Ctor, {
+    fields: src.slice(src.indexOf('(') + 1, src.indexOf(')')).split(/\s*,\s*/).filter(Boolean),
+    fromJSON: fromJSON
+  });
   shortnames.forEach(function(shortname){
     if (!(shortname in ASTNode.types))
       ASTNode.types[shortname] = [];
-
     ASTNode.types[shortname].push(Ctor);
   });
 });
@@ -366,7 +365,7 @@ function prep(o){
 }
 
 function functionAST(f){
-  return ASTNode(esprima.parse('('+f+')').body[0].expression);
+  return jsonToAST(esprima.parse('('+f+')').body[0].expression);
 }
 
 function makeIdentifier(o){
@@ -378,6 +377,14 @@ function makeIdentifier(o){
     return new Identifier(o.name);
   else
     return assertInstance(o, Identifier);
+}
+
+function isValidIdentifier(string) {
+  return /^[a-zA-Z_\$][a-zA-Z0-9_\$]*$/.test(string);
+}
+
+function keyNeedsQuotes(key){
+  return !/^[a-zA-Z0-9_\$]+$/.test(key);
 }
 
 function _hoist(from, to){
@@ -521,7 +528,9 @@ Mixin.create('arrays', function(o, args){
 
   define(o, [
     function append(items){
-      items = [].concat(items).map(checkType);
+      if (!(items instanceof Array))
+        items = new ASTArray([items]);
+      items = items.map(checkType);
       _push.apply(this[prop], items);
       return this;
     },
@@ -599,82 +608,6 @@ Mixin.create('arrays', function(o, args){
 
 
 
-Mixin.create('classes', function(o){
-  define(o, {
-    get inherits(){
-      return _(this).inherits;
-    },
-    set inherits(v){
-      if (typeof v === 'string')
-        v = new Identifier(v);
-      if (ASTNode.isNode(v)) {
-        if (v instanceof Identifier) {
-          this.superClass = v;
-        } else if (from.matches('class')) {
-          this.superClass = from.id;
-          _(this).inherits = from;
-        }
-      }
-    }
-  });
-
-  define(o, [
-    function getConstructor(){
-      return this.find('method[key = "constructor"].value:first');
-    },
-    function getMethods(){
-      return this.find('method[kind = ""][key != "constructor"].value');
-    },
-    function getAccessors(){
-      return this.find('method[kind != ""]');
-    },
-    function convertSupers(){
-      var superclass = this.superClass;
-      this.find('member[object=super]').forEach(function(superCall){
-        var call = superCall.getParent();
-        call.callee = superclass.get('prototype').get(superCall.property);
-        call.call();
-      });
-      this.find('call[callee=super]').forEach(function(superCall){
-        superCall.callee = superclass.clone();
-        superCall.call();
-      });
-    },
-    function createPrototype(){
-      var prototype = new ObjectExpression({ constructor: this.id });
-      this.getAccessors().forEach(function(accessor){
-        prototype.append(accessor.toProperty());
-      });
-      this.getMethods().forEach(function(method){
-        prototype.set(method);
-      });
-      return this.id.set('prototype', prototype);
-    },
-    function toFunction(){
-      var self = this.clone(),
-          ctor = self.getConstructor();
-
-      ctor.id = self.id || self.identity;
-
-      if (self.superClass)
-        self.convertSupers();
-
-      var closure = ctor.scopedDeclaration();
-      closure.pop();
-
-      if (self.superClass)
-        closure.addArgument(self.superClass);
-
-      var decl = closure.append(self.createPrototype())
-                        .returns(ctor.id)
-                        .declaration(ctor.id);
-
-      decl.identity = ctor.id.name;
-      return decl;
-    }
-  ]);
-});
-
 
 // ##################
 // ### Expression ###
@@ -699,6 +632,9 @@ inherit(Expression, ASTNode, [
     return new ExpressionStatement(this);
   },
   function assignTo(obj, key){
+    if (key == null) {
+      return this.declaration(obj);
+    }
     if (typeof key === 'number' || typeof key === 'string')
       key = new Identifier(key+'');
 
@@ -718,6 +654,9 @@ inherit(Expression, ASTNode, [
     if (typeof key === 'number' || typeof key === 'string')
       key = new Identifier(key+'');
     return new MemberExpression(this, key);
+  },
+  function call(args){
+    return new CallExpression(this, args);
   },
   function declaration(name){
     if (typeof name === 'string')
@@ -832,6 +771,19 @@ function BlockStatement(body){
   body && this.append(body);
   prep(this);
 }
+define(BlockStatement, [
+  function createBlock(from){
+    if (from instanceof BlockStatement)
+      return from;
+    else if (!from || from instanceof Array)
+      return new BlockStatement(from);
+    else {
+      var out = new BlockStatement;
+      out.append(from);
+      return out;
+    }
+  }
+]);
 nodeTypes.register(BlockStatement, Statement, 'block', []);
 Mixin.use('arrays', BlockStatement.prototype, {
   property: 'body',
@@ -1120,8 +1072,9 @@ Mixin.use('arrays', FunctionExpression.prototype, {
 
 function Identifier(name){
   if (name instanceof Identifier)
-    return name;
-  this.name = name;
+    this.name = name.name;
+  else
+    this.name = name;
 }
 nodeTypes.register(Identifier, Expression, 'ident', [
   function isSame(value){
@@ -1204,10 +1157,14 @@ LogicalExpression.operators = ['&&', '||'];
 // ### MemberExpression ###
 // ########################
 
-function MemberExpression(object, property){
+function MemberExpression(object, property, computed){
   this.object = assertInstance(object, Expression);
   this.property = assertInstance(property, Expression);
-  this.computed = !(this.property instanceof Literal || this.property instanceof Identifier) || isFinite(this.property.name)
+  if (computed == null)
+    computed = !(this.property instanceof Literal
+              || this.property instanceof Identifier)
+              || isFinite(this.property.name);
+  this.computed = computed
   prep(this);
 }
 nodeTypes.register(MemberExpression, Expression, 'member', [
@@ -1237,6 +1194,43 @@ Mixin.use('arrays', NewExpression.prototype, {
   type: Expression
 });
 
+Mixin.create('object', function(o){
+  define(o, [
+    function set(key, value){
+      if (ASTNode.isFunction(key)) {
+        value = key;
+        key = value.id;
+      }
+
+      if (key instanceof Identifier)
+        key = key.name;
+
+      if (isObject(key)) {
+        var o = key;
+        Object.keys(o).forEach(function(key){
+          var desc = Object.getOwnPropertyDescriptor(o, key);
+          if (desc) {
+            if (desc.set) this.append(new Property('set', key, functionAST(desc.set)));
+            if (desc.get) this.append(new Property('get', key, functionAST(desc.get)))
+            if ('value' in desc) this.set(key, desc.value);
+          }
+        }, this);
+        return this;
+      } else if (typeof key === 'string') {
+        if (!isObject(value))
+          value = new Literal(value);
+        else if (typeof value === 'function')
+          value = functionAST(value);
+        if (value instanceof ASTNode && !(value instanceof Property))
+          value = new Property('init', key, value);
+
+        if (value instanceof Property)
+          this.append(value)
+      }
+      return this;
+    }
+  ]);
+});
 
 // ########################
 // ### ObjectExpression ###
@@ -1256,40 +1250,9 @@ nodeTypes.register(ObjectExpression, Expression, 'object', [
     });
     return this;
   },
-  function set(key, value){
-    if (ASTNode.isFunction(key)) {
-      value = key;
-      key = value.id;
-    }
 
-    if (key instanceof Identifier)
-      key = key.name;
-
-    if (isObject(key)) {
-      var o = key;
-      Object.keys(o).forEach(function(key){
-        var desc = Object.getOwnPropertyDescriptor(o, key);
-        if (desc) {
-          if (desc.set) this.append(new Property('set', key, functionAST(desc.set)));
-          if (desc.get) this.append(new Property('get', key, functionAST(desc.get)))
-          if ('value' in desc) this.set(key, desc.value);
-        }
-      }, this);
-      return this;
-    } else if (typeof key === 'string') {
-      if (!isObject(value))
-        value = new Literal(value);
-      else if (typeof value === 'function')
-        value = functionAST(value);
-      if (value instanceof ASTNode && !(value instanceof Property))
-        value = new Property('init', key, value);
-
-      if (value instanceof Property)
-        this.append(value)
-    }
-    return this;
-  }
 ]);
+Mixin.use('object', ObjectExpression.prototype);
 Mixin.use('arrays', ObjectExpression.prototype, {
   property: 'properties',
   type: Property
@@ -1301,8 +1264,10 @@ Mixin.use('arrays', ObjectExpression.prototype, {
 // ###############
 
 function Program(body, comments){
-  this.body = new ASTArray;
-  body && this.body.append(body);
+  if (!(body instanceof ASTArray))
+    body = new ASTArray(body);
+  this.body = body;
+
 }
 nodeTypes.register(Program, ASTNode, 'program', [
   function hoist(){
@@ -1320,7 +1285,10 @@ Mixin.use('arrays', Program.prototype, {
 // ################
 
 function Property(kind, key, value){
-  this.key = makeIdentifier(key);
+  if (typeof key === 'string')
+    this.key = keyNeedsQuotes(key) ? new Literal(key) : new Identifier(key);
+  else
+    this.key = key;
   if (!isObject(value))
     value = new Literal(value);
 
@@ -1643,9 +1611,21 @@ define(ImmediatelyInvokedFunctionExpression.prototype, {
 });
 
 
-// function ArrayPattern(){}
-// nodeTypes.register(ArrayPattern, ASTNode, []);
-
+function ArrayPattern(elements){
+  if (elements instanceof ASTArray)
+    this.elements = elements;
+  else if (elements instanceof Array)
+    this.elements = new ASTArray(elements);
+  else {
+    this.elements = new ASTArray;
+    if (elements)
+      this.append(elements);
+  }
+}
+nodeTypes.register(ArrayPattern, ASTNode, 'arraypattern', []);
+Mixin.use('arrays', ArrayPattern.prototype, {
+  property: 'elements'
+});
 
 
 
@@ -1676,33 +1656,107 @@ nodeTypes.register(ArrowFunctionExpression, Expression, ['function', 'arrow'], [
     var self = new FunctionExpression(null, this.params, body);
     return self.get('bind').call([new ThisExpression]);
   },
-  function becomeExpression(){
-    var parent = this.getParent();
-    var self = this.toExpression();
-    if (parent) {
-      for (var k in parent ) {
-        if (parent[k] === this) {
-          parent[k] = self;
-          _(self).parent = parent;
-          _(this).parent = null;
-          return;
-        }
-      }
-    }
-    return self;
+  function desugar(){
+    this.replaceWith(this.toExpression());
+    return this;
   }
 ]);
 
-define(ArrowFunctionExpression, {
-  fromJSON: function fromJSON(json){
-    return new ArrowFunctionExpression(json.params, json.body.body);
-  }
-});
 Mixin.use('functions', ArrowFunctionExpression.prototype);
 define(ArrowFunctionExpression.prototype, {
   get id(){ return null },
   set id(v){ if (v) this.identity = typeof v === 'string' ? v : v.name }
 });
+
+
+
+
+
+Mixin.create('classes', function(o){
+  define(o, {
+    get inherits(){
+      return _(this).inherits;
+    },
+    set inherits(v){
+      if (typeof v === 'string')
+        v = new Identifier(v);
+      if (ASTNode.isNode(v)) {
+        if (v instanceof Identifier) {
+          this.superClass = v;
+        } else if (from.matches('class')) {
+          this.superClass = from.id;
+          _(this).inherits = from;
+        }
+      }
+    }
+  });
+
+  define(o, [
+    function findConstructor(){
+      return this.find('method[key = "constructor"].value:first');
+    },
+    function findMethods(){
+      return this.find('method[kind = ""][key != "constructor"].value');
+    },
+    function findAccessors(){
+      return this.find('method[kind != ""]');
+    },
+    function generatePrototype(){
+      var prototype = new ObjectExpression({ constructor: this.id });
+      this.findAccessors().forEach(function(accessor){
+        prototype.append(accessor.toProperty());
+      });
+      this.findMethods().forEach(function(method){
+        prototype.set(method);
+      });
+      return this.id.set('prototype', prototype);
+    },
+    function desugarSuper(){
+      var superclass = this.superClass;
+      this.find('member[object=super]').forEach(function(superCall){
+        var call = superCall.getParent();
+        call.callee = superclass.get('prototype').get(superCall.property);
+        call.call();
+      });
+      this.find('call[callee=super]').forEach(function(superCall){
+        superCall.callee = superclass.clone();
+        superCall.call();
+      });
+      return this;
+    },
+    function toFunction(){
+      var self = this.clone(),
+          ctor = self.findConstructor();
+
+      ctor.id = self.id || this.identity;
+
+      if (self.superClass)
+        self.desugarSuper();
+
+      var closure = ctor.scopedDeclaration();
+      closure.pop();
+
+      if (self.superClass)
+        closure.addArgument(self.superClass);
+
+      closure.append(self.generatePrototype());
+      closure.returns(ctor.id);
+
+      if (this.id) {
+        var decl = closure.declaration(ctor.id);
+        decl.identity = ctor.id.name;
+        return decl;
+      } else {
+        return closure;
+      }
+    },
+    function desugar(){
+      this.replaceWith(this.toFunction());
+      return this;
+    }
+  ]);
+});
+
 
 
 // #################
@@ -1779,56 +1833,257 @@ nodeTypes.register(MethodDefinition, ASTNode, 'method', [
 ]);
 
 define(MethodDefinition, {
-  fromJSON: function fromJSON(json){
-    return new MethodDefinition(Identifier.fromJSON(json.key), FunctionExpression.fromJSON(json.value), json.kind);
-  },
   kinds: ['', 'get', 'set'],
   METHOD: 0,
   GET: 1,
   SET: 2
 });
 
+
+
+
+// #####################
+// ### ClassHeritage ###
+// #####################
+
 function ClassHeritage(){console.log(arguments)}
-nodeTypes.register(ClassHeritage, ASTNode, []);
+nodeTypes.register(ClassHeritage, ASTNode, 'heritage', []);
 
-// function ExportDeclaration(){}
-// nodeTypes.register(ExportDeclaration, Declaration, []);
 
-// function ExportSpecifier(){}
-// nodeTypes.register(ExportSpecifier, ASTNode, []);
 
-// function ExportSpecifierSet(){}
-// nodeTypes.register(ExportSpecifierSet, ASTNode, []);
 
-// function Glob(){}
-// nodeTypes.register(Glob, ASTNode, []);
+// #########################
+// ### ExportDeclaration ###
+// #########################
 
-// function ImportDeclaration(){}
-// nodeTypes.register(ImportDeclaration, Declaration, []);
+function ExportDeclaration(declaration){
+  this.declaration = assertInstance(declaration, Declaration);
+}
+nodeTypes.register(ExportDeclaration, Declaration, 'export', []);
 
-// function ImportSpecifier(){}
-// nodeTypes.register(ImportSpecifier, ASTNode, []);
 
-// function ModuleDeclaration(){}
-// nodeTypes.register(ModuleDeclaration, Declaration, []);
 
-// function ObjectPattern(){}
-// nodeTypes.register(ObjectPattern, ASTNode, []);
+// #######################
+// ### ExportSpecifier ###
+// #######################
 
-// function Path(){}
-// nodeTypes.register(Path, ASTNode, []);
+function ExportSpecifier(id, from){
+  this.id = makeIdentifier(id);
+  this.from = assertInstance(from, [null, Literal, Path]);
+}
+nodeTypes.register(ExportSpecifier, ASTNode, 'exportspec', []);
 
-// function QuasiElement(){}
-// nodeTypes.register(QuasiElement, ASTNode, []);
 
-// function QuasiLiteral(){}
-// nodeTypes.register(QuasiLiteral, Expression, []);
 
-// function TaggedQuasiExpression(){}
-// nodeTypes.register(TaggedQuasiExpression, Expression, []);
 
-// function YieldExpression(){}
-// nodeTypes.register(YieldExpression, Expression, []);
+// ##########################
+// ### ExportSpecifierSet ###
+// ##########################
+
+function ExportSpecifierSet(specifiers){
+  this.specifiers = new ASTArray;
+  if (specifiers)
+    this.append(specifiers);
+  this.from = from;
+}
+nodeTypes.register(ExportSpecifierSet, ASTNode, 'exportspecs', []);
+Mixin.use('arrays', ExportSpecifierSet.prototype, {
+  property: 'specifiers',
+  type: ExportSpecifier
+});
+
+
+
+// ######################
+// ### ForOfStatement ###
+// ######################
+
+function ForOfStatement(left, right, body){
+  this.left = assertInstance(left, [VariableDeclaration, Expression]);
+  this.right = assertInstance(right, Expression);
+  if (!body || body instanceof Array)
+    body = new BlockStatement(body);
+  this.body = assertInstance(body, Statement);
+  prep(this);
+}
+nodeTypes.register(ForOfStatement, Statement, 'forof', []);
+
+
+
+// ############
+// ### Glob ###
+// ############
+
+function Glob(){}
+nodeTypes.register(Glob, ASTNode, 'glob', []);
+
+
+
+
+// #########################
+// ### ImportDeclaration ###
+// #########################
+
+function ImportDeclaration(specifiers, from){
+  this.specifiers = new ASTArray;
+  if (specifiers)
+    this.append(specifiers);
+  this.from = from;
+}
+nodeTypes.register(ImportDeclaration, Declaration, 'import', []);
+Mixin.use('arrays', ImportDeclaration.prototype, {
+  property: 'specifiers'
+});
+
+
+
+
+// #######################
+// ### ImportSpecifier ###
+// #######################
+
+function ImportSpecifier(id, from){
+  this.id = makeIdentifier(id);
+  this.from = assertInstance(from, [null, Literal, Path]);
+}
+nodeTypes.register(ImportSpecifier, ASTNode, 'importspec', []);
+
+
+
+// #########################
+// ### ModuleDeclaration ###
+// #########################
+
+function ModuleDeclaration(id, body){
+  this.id = makeIdentifier(id);
+  this.body = BlockStatement.createBlock(body);
+}
+nodeTypes.register(ModuleDeclaration, Declaration, 'module', []);
+
+
+
+
+// #####################
+// ### ObjectPattern ###
+// #####################
+
+function ObjectPattern(properties){
+  this.properties = new ASTArray;
+  if (properties instanceof Array)
+    this.append(properties);
+  else if (isObject(properties))
+    this.set(properties);
+}
+nodeTypes.register(ObjectPattern, ASTNode, 'objectpattern', []);
+Mixin.use('object', ObjectPattern.prototype);
+Mixin.use('arrays', ObjectPattern.prototype, {
+  property: 'properties',
+  type: Property
+});
+
+
+
+
+// ############
+// ### Path ###
+// ############
+
+function Path(body){
+  this.body = BlockStatement.createBlock(body);
+}
+nodeTypes.register(Path, ASTNode, 'path', []);
+Mixin.use('arrays', Path.prototype, {
+  property: 'body'
+});
+
+
+
+
+// ####################
+// ### QuasiElement ###
+// ####################
+
+function QuasiElement(value, tail){
+  this.value = typeof value === 'string' ? { raw: value, cooked: value } : value;
+  this.tail = !!tail;
+  prep(this);
+}
+nodeTypes.register(QuasiElement, ASTNode, 'quasielement', []);
+
+
+
+// ####################
+// ### QuasiLiteral ###
+// ####################
+
+function QuasiLiteral(quasis, expressions){
+  if (quasis instanceof Array) {
+    this.quasis = new ASTArray(quasis.map(function(item, i){
+      if (typeof item === 'string')
+        return new QuasiElement(item, i === quasis.length - 1);
+      else if (item instanceof QuasiElement)
+        return item;
+      else if (item && item.value)
+        return new QuasiElement(item.value, i === quasis.length - 1);
+    }));
+  }
+  this.quasis = quasis instanceof ASTArray ? quasis : new ASTArray(quasis);
+  this.expressions = new ASTArray(expressions).map(function(expr){
+    return new Identifier(expr.name);
+  });
+  prep(this);
+}
+nodeTypes.register(QuasiLiteral, Expression, ['quasi', 'quasiliteral'], [
+  function toFunction(tag){
+    var raw = new ArrayExpression,
+        params = new ASTArray(this.expressions);
+
+    params.unshift(raw)
+
+    for (var i=0; i < this.quasis.length; i++)
+      raw.append(new Literal(this.quasis[i].value.raw));
+
+    return (tag || QUASI).clone().call(params);
+  },
+  function desugar(tag){
+    this.replaceWith(this.toFunction(tag));
+    return this;
+  }
+]);
+
+
+var QUASI = functionAST(function(r){
+  for (var i = arguments.length - 1; r[--i] += arguments[i+1];);
+  return r.join('');
+});
+
+
+function TaggedQuasiExpression(tag, quasi){
+  this.tag = makeIdentifier(tag);
+  this.quasi = assertInstance(quasi, QuasiLiteral);
+  prep(this);
+}
+
+nodeTypes.register(TaggedQuasiExpression, Expression, ['quasi', 'taggedquasi'], [
+  function desugar(){
+    this.replaceWith(this.quasi.toFunction(this.tag));
+    return this;
+  }
+]);
+
+
+
+
+// #######################
+// ### YieldExpression ###
+// #######################
+
+function YieldExpression(argument, delegate){
+  this.argument = argument;
+  this.delegate = !!delegate;
+}
+nodeTypes.register(YieldExpression, Expression, 'yield', []);
+
 
 
 var compileSelector = require('./compile-selector')
