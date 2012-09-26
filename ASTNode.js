@@ -207,15 +207,26 @@ define(ASTNode.prototype, [
     if (myParent) {
       for (var k in myParent) {
         if (myParent[k] === this) {
-          myParent[k] = replacement
-          parent(replacement, myParent);
+          myParent[k] = replacement;
           unparent(this);
+          parent(replacement, myParent);
           return this;
         }
       }
-    } else {
-      console.log('replaceWith failed', this.type);
+      for (var k in myParent) {
+        if (isNode(myParent[k])) {
+          for (var j in myParent[k]) {
+            if (myParent[k][j] === this) {
+              myParent[k][j] = replacement;
+              unparent(this);
+              parent(replacement, myParent[k]);
+              return this;
+            }
+          }
+        }
+      }
     }
+    console.log('replaceWith failed for '+this.type);
   },
   function parentScope(){
     var parent = this.getParent();
@@ -289,7 +300,7 @@ inherit(ASTArray, Array, [
     var out = new ASTArray;
     this.forEach(function(item){
       if (isNode(item))
-        item = item.getParent() === this ? parent(item.clone(), this) : item.clone();
+        item = item.getParent() === this ? parent(item.clone(), out) : item.clone();
 
       out.push(item);
     });
@@ -394,6 +405,14 @@ function prep(o){
       _(o[key]).parent = o;
   });
 }
+
+function parse(s){
+  if (typeof s === 'function')
+    return jsonToAST(esprima.parse('('+s+')').body[0].expression);
+  else
+    return jsonToAST(esprima.parse(s).body[0].expression);
+}
+
 
 function functionAST(f){
   return jsonToAST(esprima.parse('('+f+')').body[0].expression);
@@ -561,7 +580,7 @@ Mixin.create('arrays', function(o, args){
   define(o, [
     function append(items){
       if (!(items instanceof Array))
-        items = new ASTArray([items]);
+        items = [items];
       items = items.map(function(item){
         return parent(checkType(item), this);
       }, this);
@@ -570,7 +589,7 @@ Mixin.create('arrays', function(o, args){
     },
     function prepend(items){
       if (!(items instanceof Array))
-        items = new ASTArray([items]);
+        items = [items];
       items = items.map(function(item){
         return parent(checkType(item), this);
       }, this);
@@ -579,7 +598,7 @@ Mixin.create('arrays', function(o, args){
     },
     function insert(index, items){
       if (!(items instanceof Array))
-        items = new ASTArray([items]);
+        items = [items];
       items = items.map(function(item){
         return parent(checkType(item), this);
       }, this);
@@ -818,9 +837,14 @@ define(BlockStatement, [
   function createBlock(from){
     if (from instanceof BlockStatement)
       return from;
-    else if (!from || from instanceof Array)
+    else if (!from || from instanceof ASTArray) {
+      var out = new BlockStatement;
+      out.body = from;
+      prep(out);
+      return out;
+    } else if (!from || from instanceof Array) {
       return new BlockStatement(from);
-    else {
+    } else {
       var out = new BlockStatement;
       out.append(from);
       return out;
@@ -1332,9 +1356,11 @@ Mixin.use('arrays', ObjectExpression.prototype, {
 // ###############
 
 function Program(body, comments){
-  if (!(body instanceof ASTArray))
-    body = new ASTArray(body);
-  this.body = body;
+  this.body = new ASTArray;
+  if (body instanceof Array)
+    this.append(body);
+  else
+    this.append([body]);
   prep(this);
 
 }
@@ -1822,7 +1848,7 @@ Mixin.create('classes', function(o){
       closure.append(ret);
 
       prep(closure.callee);
-      if (this.id) {
+      if (this instanceof ClassDeclaration) {
         var decl = closure.declaration(ctor.id);
         decl.identity = ctor.id.name;
         return decl;
@@ -1939,7 +1965,14 @@ function ExportDeclaration(declaration){
   this.declaration = assertInstance(declaration, Declaration);
   prep(this);
 }
-nodeTypes.register(ExportDeclaration, Declaration, 'export', []);
+nodeTypes.register(ExportDeclaration, Declaration, 'export', [
+  function desugar(){
+    var decl = this.declaration.declarations[0];
+    var exports = $('exports').set(decl.id, decl.init.clone());
+    decl.init.replaceWith(exports);
+    return this.replaceWith(this.declaration);
+  }
+]);
 
 
 
@@ -2043,7 +2076,17 @@ function ModuleDeclaration(id, body){
   this.body = BlockStatement.createBlock(body);
   prep(this);
 }
-nodeTypes.register(ModuleDeclaration, Declaration, 'module', []);
+nodeTypes.register(ModuleDeclaration, Declaration, 'module', [
+  function desugar(){
+    this.find('export').forEach(function(item){
+      item.desugar();
+    });
+    var closure = new FunctionExpression(null, ['global', 'exports'], this.body);
+    var args = [$('#this'), $('#this'), parse('typeof exports === "undefined" ? {} : exports')];
+    closure.returns('exports');
+    return this.replaceWith(freeze.call(closure.get('call').call(args)).declaration(this.id));
+  }
+]);
 
 
 
