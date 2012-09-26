@@ -1,3 +1,5 @@
+//!#es6
+
 module geometry {
   var byteString = Function.prototype.apply.bind(String.fromCharCode, null);
 
@@ -12,32 +14,14 @@ module geometry {
       sin   = Math.sin,
       PI    = Math.PI;
 
-  function isObject(o){
-    return o != null && typeof o === 'object' || typeof o === 'function';
-  }
+  var isObject = o => o != null && typeof o === 'object' || typeof o === 'function';
+  var toUint32 = n => n >>> 0;
+  var toInt32 = n => n >> 0;
+  var toInt = n => n ? toFinite(n) + .5 | 0 : 0;
+  var toFinite = n => typeof n === 'number' ? n || 0 : isFinite(n /= 1) ? n : 0;
+  var isInt = n => typeof n === 'number' ? n | 0 === n : n instanceof Array ? n.every(isInt) : false;
 
-  function toUint32(n){
-    return n >>> 0;
-  }
 
-  function toInt32(n){
-    return n >> 0;
-  }
-
-  function toInt(n){
-    return n ? toFinite(n) + .5 | 0 : 0;
-  }
-
-  function toFinite(n){
-    return typeof n === 'number' ? n || 0 : isFinite(n /= 1) ? n : 0;
-  }
-
-  function isInt(n){
-    if (typeof n === 'number')
-      return n | 0 === n;
-    else if (Array.isArray(n))
-      return n.every(isInt);
-  }
 
 
   export class Point {
@@ -49,6 +33,12 @@ module geometry {
     get y(){ return this[1] }
     set x(v){ this[0] = v }
     set y(v){ this[1] = v }
+    get size(){ return this.distance([0, 0]) }
+    get quadrant(){ return (this[0] < 0) << 1 | (this[1] < 0) }
+    get isEmpty(){ return !(this[0] && this[1]) }
+    distance(p){
+      return sqrt(pow(n = this[0] - p[0], 2) + pow(n = this[1] - p[1], 2));
+    }
     clone(){
       return new Point(this[0], this[1]);
     }
@@ -159,19 +149,6 @@ module geometry {
       this[1] = 0;
       return this;
     }
-    distance(point) {
-      var n;
-      return sqrt((n = this[0] - point[0]) * n + (n = this[1] - point[1]) * n);
-    }
-    size(){
-      return this.distance([0, 0]);
-    }
-    quadrant(){
-      return (this[0] < 0) << 1 | (this[1] < 0);
-    }
-    isEmpty(){
-      return !(this[0] && this[1]);
-    }
     isEqual(point){
       return this[0] === point[0]
           && this[1] === point[1];
@@ -193,7 +170,8 @@ module geometry {
       return new Type(array);
     }
     toString(){
-      var x = this[0], y = this[1];
+      var x = this[0],
+          y = this[1];
       return `<Point ${x} ${y}>`;
     }
   }
@@ -212,6 +190,14 @@ module geometry {
     set y1(v){ this[1] = v }
     set x2(v){ this[2] = v }
     set y2(v){ this[3] = v }
+    get maxX(){ return this[0] > this[2] ? this[0] : this[2] }
+    get minX(){ return this[0] < this[2] ? this[0] : this[2] }
+    get maxY(){ return this[1] > this[3] ? this[1] : this[3] }
+    get minY(){ return this[1] < this[3] ? this[1] : this[3] }
+    get distance(){ return sqrt(pow(this[2] - this[0], 2) + pow(this[3] - this[1], 2)) }
+    get slope(){ return (this[3] - this[1]) / (this[2] - this[0]) }
+    max(){ return new Point(this.maxX, this.maxY) }
+    min(){ return new Point(this.minX, this.minY) }
     set(x1, y1, x2, y2){
       if (typeof x1 === 'number' || x1 == null)
         return this.setValues(x1, y1, x2, y2);
@@ -254,13 +240,6 @@ module geometry {
       this[3] = o.y2;
       return this;
     }
-    distance(){
-      var n;
-      return sqrt((n = this[2] - this[0]) * n + (n = this[3] - this[1]) * n);
-    }
-    slope(){
-      return (this[3] - this[1]) / (this[2] - this[0]);
-    }
     intersect(line) {
       var ax = this[0] - this[2],
           ay = this[1] - this[3],
@@ -281,35 +260,10 @@ module geometry {
       return null;
     }
     contains(point){
-      var x1, y1, x2, y2;
-
-      this[0] < this[2] ? (x1 = 0, x2 = 2) : (x1 = 2, x2 = 0);
-      if (point[0] < this[x1] || point[0] > this[x2])
-        return false;
-
-      this[1] < this[3] ? (y1 = 1, y2 = 3) : (y1 = 3, y2 = 1);
-      if (point[1] < this[y1] || point[1] > this[y2])
-        return false;
-
-      return true;
-    }
-    maxX(){
-      return this[0] > this[2] ? this[0] : this[2];
-    }
-    minX(){
-      return this[0] < this[2] ? this[0] : this[2];
-    }
-    maxY(){
-      return this[1] > this[2] ? this[1] : this[2];
-    }
-    minY(){
-      return this[1] < this[2] ? this[1] : this[2];
-    }
-    max(){
-      return new Point(this.maxX(), this.maxY());
-    }
-    min(){
-      return new Point(this.minX(), this.minY());
+      return point[0] > this.minX
+          && point[0] < this.maxX
+          && point[1] > this.minY
+          && point[1] < this.maxY;
     }
     toBytes(){
       return byteString(this);
@@ -354,6 +308,7 @@ module geometry {
     get height(){ return this[3] }
     get centerX(){ return (this[0] + this[2]) / 2 }
     get centerY(){ return (this[1] + this[3]) / 2 }
+    get isEmpty(){ return this[2] <= 0 || this[3] <= 0 }
     center(){
       return new Point((this[0] + this[2]) / 2, (this[1] + this[3]) / 2);
     }
@@ -440,32 +395,6 @@ module geometry {
       this[3] = a[3];
       return this;
     }
-    setWidth(v, side){
-      v = toFinite(v);
-      if (side > 0) {
-        this[2] += v;
-      } else if (side < 0) {
-        this[0] -= v;
-      } else {
-        var center = (this[0] + this[2]) / 2;
-        v /= 2;
-        this[0] = center - v;
-        this[2] = center + v;
-      }
-      return this;
-    }
-    setHeight(v, side){
-      v = toFinite(v);
-      if (side > 0) {
-        this[3] += v;
-      } else if (side < 0) {
-        this[1] -= v;
-      } else {
-        this[3] += (v /= 2);
-        this[1] -= v;
-      }
-      return this;
-    }
     centerIn(rect){
       this.setCenter(rect.centerX, rect.centerY);
       return this;
@@ -513,9 +442,6 @@ module geometry {
           && this[1] === rect[1]
           && this[2] === rect[2]
           && this[3] === rect[3];
-    }
-    isEmpty(){
-      return this.width <= 0 || this.height <= 0;
     }
     contains(x, y){
       if (x instanceof Rect || x.length >= 3) {
