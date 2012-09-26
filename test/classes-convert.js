@@ -2,20 +2,19 @@ var astify = require('astify'),
     ASTArray = astify.ASTArray,
     _ = astify.createNode;
 
-var inherits = {},
-    output = new ASTArray;
+var output = astify.parseFile('./classes.js').ast;
 
-astify.parseFile('./classes.js').ast.find('class').forEach(function(classAST){
-  var functionAST = classAST.toFunction();
+function desugar(selector){
+  output.find(selector).forEach(function(item){
+    if ('desugar' in item)
+      item.desugar();
+  });
+}
 
-  if (functionAST.identity in inherits) {
-    inherits[functionAST.identity].inherits = functionAST;
-    output.splice(inherits[functionAST.identity], 0, functionAST);
-  } else {
-    if (classAST.superClass)
-      inherits[classAST.superClass.name] = output.length;
-    output.push(functionAST);
-  }
-});
+desugar('class');
+desugar('taggedquasi');
+desugar('quasi');
+
+
 
 console.log(output.toSource());
