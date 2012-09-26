@@ -62,7 +62,7 @@ var modifiers = {
 
       nodes.forEach(function(node){
         var parent = node.getParent();
-        if (ASTNode.isNode(parent) && parent.firstChild() === node)
+        if (isNode(parent) && parent.firstChild() === node)
           firsts.push(node);
       })
 
@@ -73,7 +73,7 @@ var modifiers = {
 
       nodes.forEach(function(node){
         var parent = node.getParent();
-        if (ASTNode.isNode(parent) && parent.lastChild() === node)
+        if (isNode(parent) && parent.lastChild() === node)
           lasts.push(node);
       })
 
@@ -107,7 +107,6 @@ var comparators = {
 
 function compileSelector(selector){
   var subselectors = parseSelector(selector);
-  //console.log(subselectors);
   subselectors = subselectors.selectors[0].map(function(subselector){
     if (subselector.modifiers || subselector.keys) {
       var modifier = function(){
@@ -198,9 +197,10 @@ function compileSelector(selector){
   });
 
   return function(node){
-    for (var i=0; i < subselectors.length; i++)
+    for (var i=0; i < subselectors.length; i++) {
       node = subselectors[i](node);
-    return Array.prototype.reverse.call(node);
+    }
+    return node instanceof Array ? node.reverse() : node;
   };
 }
 
