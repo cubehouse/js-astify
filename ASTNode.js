@@ -2188,7 +2188,7 @@ var freeze = $('Object').get('freeze');
 
 
 var QUASI = functionAST(function(r){
-  for (var i = arguments.length - 1, o=''; o += r[--i].raw + arguments[i+1];);
+  for (var i=0, o=''; r[i]; o += r[i].raw + (++i === r.length ? '' : arguments[i]));
   return o;
 });
 

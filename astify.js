@@ -3,6 +3,9 @@ var AST = require('./AST'),
 
 module.exports = {
   install: require('./toAst'),
+  parse: function parse(code){
+    return new AST(0, null, code);
+  },
   parseFile: function parseFile(file){
     return new AST(2, file)
   },
