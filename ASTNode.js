@@ -13,9 +13,13 @@ var Visitor       = require('./Visitor'),
     inherit       = utility.inherit,
     gensym        = utility.gensym;
 
+
 var _push    = [].push,
     _unshift = [].unshift,
-    _slice   = [].slice;
+    _slice   = [].slice,
+    _pop     = [].pop,
+    _shift   = [].shift;
+
 
 var _ = createStorage();
 
@@ -54,21 +58,22 @@ function ASTNode(json){
 }
 
 
+function isNode(o){
+  return o instanceof ASTNode || o instanceof ASTArray;
+}
 
 define(ASTNode, [
   function isFunction(o){
     return o instanceof FunctionExpression || o instanceof FunctionDeclaration;
   },
-  function isNode(o){
-    return o instanceof ASTNode || o instanceof ASTArray;
-  },
+  isNode,
   function createNode(type){
     if (type instanceof ASTNode)
       return type;
 
     if (typeof type === 'string') {
-      if (type in ASTNode.types)
-        var Ctor = ASTNode.types[type][0];
+      if (type[0] === '#' && type.slice(1) in ASTNode.types)
+        var Ctor = ASTNode.types[type.slice(1)][0];
       else if (nodeTypes.lookup(type))
         var Ctor = nodeTypes.lookup(type);
       else
@@ -85,6 +90,7 @@ define(ASTNode, [
   ASTArray
 ]);
 
+var $ = ASTNode.createNode;
 
 define(ASTNode.prototype, [
   function getParent(){
@@ -107,7 +113,7 @@ define(ASTNode.prototype, [
     return out;
   },
   function visit(callback){
-    return new Visitor(this, callback, ASTNode.isNode).next();
+    return new Visitor(this, callback, isNode).next();
   },
   function visitSome(filter, callback){
     return this.visit(function(node, parent){
@@ -126,6 +132,7 @@ define(ASTNode.prototype, [
   function remove(child){
     for (var k in this) {
       if (this[k] === child) {
+        unparent(child);
         this[k] = null;
         return k;
       }
@@ -137,7 +144,7 @@ define(ASTNode.prototype, [
       var item = this[keys[i]];
       if (item instanceof Array) {
         for (var j=0; j < item.length; j++) {
-          if (ASTNode.isNode(item[j]))
+          if (isNode(item[j]))
             return item[j];
         }
       } else if (item instanceof ASTNode) {
@@ -151,7 +158,7 @@ define(ASTNode.prototype, [
       var item = this[keys[i]];
       if (item instanceof Array) {
         for (var j=item.length - 1; j > -1; j--) {
-          if (ASTNode.isNode(item[j]))
+          if (isNode(item[j]))
             return item[j];
         }
       } else if (item instanceof ASTNode) {
@@ -162,8 +169,7 @@ define(ASTNode.prototype, [
   function forEach(callback, context){
     context = context || this;
     Object.keys(this).forEach(function(k){
-      if (this[k] instanceof ASTNode || this[k] instanceof ASTArray)
-        callback.call(context, this[k], k, this)
+      callback.call(context, this[k], k, this)
     }, this);
     return this;
   },
@@ -197,31 +203,45 @@ define(ASTNode.prototype, [
     return out;
   },
   function replaceWith(replacement) {
-    var parent = this.getParent();
-    if (parent) {
-      for (var k in parent) {
-        if (parent[k] === this) {
-          parent[k] = replacement;
-          _(this).parent = null;
-          _(replacement).parent = parent;
+    var myParent = this.getParent();
+    if (myParent) {
+      for (var k in myParent) {
+        if (myParent[k] === this) {
+          myParent[k] = replacement
+          parent(replacement, myParent);
+          unparent(this);
           return this;
         }
       }
     } else {
-      console.log(this.type)
+      console.log('replaceWith failed', this.type);
+    }
+  },
+  function parentScope(){
+    var parent = this.getParent();
+    while (parent) {
+      if (parent.matches('function') || parent instanceof Program)
+        return parent;
+
+      parent = parent.getParent();
     }
   }
 ]);
-
-
 
 // ################
 // ### ASTArray ###
 // ################
 
 function ASTArray(array){
-  define(this, 'length', 0)
-  this.push.apply(this, array);
+  define(this, 'length', 0);
+  if (array && !(array instanceof Array))
+    array = [array];
+
+  array && array.forEach(function(item){
+    if (isNode(item) && !item.getParent())
+      parent(item, this);
+    this.push(item);
+  }, this);
 }
 define(ASTArray, [
   function fromJSON(json){
@@ -242,15 +262,15 @@ inherit(ASTArray, Array, [
     return out;
   },
   function prepend(o){
-    if (!ASTNode.isNode(o))
-      o = ASTNode.createNode(o);
-    this.unshift(o);
+    if (!isNode(o))
+      o = $(o);
+    this.unshift(parent(o, this));
     return this;
   },
   function append(o){
-    if (!ASTNode.isNode(o))
-      o = ASTNode.createNode(o);
-    this.push(o);
+    if (!isNode(o))
+      o = $(o);
+    this.push(parent(o, this));
     return this;
   },
   function getParent(){
@@ -259,15 +279,20 @@ inherit(ASTArray, Array, [
   function remove(item){
     var index = this.indexOf(item);
     if (~index) {
+      if (isNode(item) && item.getParent() === this)
+        unparent(item);
       this.splice(index, 1);
     }
     return this;
   },
   function clone(){
-    var out = Object.create(Object.getPrototypeOf(this));
-    Object.keys(this).forEach(function(key){
-      out[key] = this[key] instanceof ASTNode || this[key] instanceof ASTArray ? this[key].clone() : this[key];
-    }, this);
+    var out = new ASTArray;
+    this.forEach(function(item){
+      if (isNode(item))
+        item = item.getParent() === this ? parent(item.clone(), this) : item.clone();
+
+      out.push(item);
+    });
     return out;
   },
   function toSource(){
@@ -281,7 +306,7 @@ inherit(ASTArray, Array, [
     });
   },
   function visit(callback){
-    return new Visitor(this, callback, ASTNode.isNode).next();
+    return new Visitor(this, callback, isNode).next();
   },
   function find(selector){
     var filter = compileSelector(selector);
@@ -292,12 +317,12 @@ inherit(ASTArray, Array, [
   },
   function firstChild(){
     for (var i=0; i < this.length; i++)
-      if (ASTNode.isNode(this[i]))
+      if (isNode(this[i]))
         return this[i];
   },
   function lastChild(){
     for (var i=this.length - 1; i > -1; i--)
-      if (ASTNode.isNode(this[i]))
+      if (isNode(this[i]))
         return this[i];
   },
 ]);
@@ -352,14 +377,20 @@ nodeTypes.on('register', function(name, Ctor, args){
 
 
 function parent(o, p){
-  if (ASTNode.isNode(o))
+  if (isNode(o))
     _(o).parent = p;
+  return o;
+}
+
+function unparent(o){
+  if (isNode(o))
+    _(o).parent = null;
   return o;
 }
 
 function prep(o){
   Object.keys(o).forEach(function(key){
-    if (ASTNode.isNode(o[key]))
+    if (isNode(o[key]))
       _(o[key]).parent = o;
   });
 }
@@ -502,10 +533,11 @@ Mixin.create('functions', function(o){
       scope.body.append(new ReturnStatement(decl.id));
       var iife = new ImmediatelyInvokedFunctionExpression(scope);
       iife.identity = this.identity;
+      prep(scope.body);
       return iife;
     },
     function returns(expr){
-      this.body.append(new ReturnStatement(expr));
+      this.body.append(parent(new ReturnStatement(expr), this.body));
       return this;
     }
   ]);
@@ -530,29 +562,40 @@ Mixin.create('arrays', function(o, args){
     function append(items){
       if (!(items instanceof Array))
         items = new ASTArray([items]);
-      items = items.map(checkType);
+      items = items.map(function(item){
+        return parent(checkType(item), this);
+      }, this);
       _push.apply(this[prop], items);
       return this;
     },
     function prepend(items){
-      items = [].concat(items).map(checkType);
+      if (!(items instanceof Array))
+        items = new ASTArray([items]);
+      items = items.map(function(item){
+        return parent(checkType(item), this);
+      }, this);
       _unshift.apply(this[prop], items);
       return this;
     },
     function insert(index, items){
-      items = [].concat(items).map(checkType);
+      if (!(items instanceof Array))
+        items = new ASTArray([items]);
+      items = items.map(function(item){
+        return parent(checkType(item), this);
+      }, this);
       this[prop].splice(index, items.length, item);
       return this;
     },
     function empty(){
-      this[prop].length = 0;
+      while (this[prop].length)
+        this.pop();
       return this;
     },
     function pop(){
-      return this[prop].pop();
+      return unparent(this[prop].pop());
     },
     function shift(){
-      return this[prop].shift();
+      return unparent(this[prop].shift())
     },
     function forEach(callback, context){
       context = context || this;
@@ -823,13 +866,13 @@ nodeTypes.register(BreakStatement, Statement, 'break', []);
 // ### CallExpression ###
 // ######################
 
-function CallExpression(callee, args){
+function CallExpression(callee, arguments){
   if (callee instanceof FunctionExpression && !(this instanceof ImmediatelyInvokedFunctionExpression))
-    return new ImmediatelyInvokedFunctionExpression(callee, args)
+    return new ImmediatelyInvokedFunctionExpression(callee, arguments)
 
   this.callee = assertInstance(callee, Expression);
-  if (args instanceof Array) {
-    args = args.map(function(arg){
+  if (arguments instanceof Array) {
+    arguments = arguments.map(function(arg){
       if (!isObject(arg))
         return new Literal(arg);
       else if ('type' in arg)
@@ -840,7 +883,7 @@ function CallExpression(callee, args){
         return new ObjectExpression(arg);
     });
   }
-  this.arguments = new ASTArray(args);
+  this.arguments = new ASTArray(arguments);
   prep(this);
 }
 nodeTypes.register(CallExpression, Expression, 'call', [
@@ -858,7 +901,8 @@ nodeTypes.register(CallExpression, Expression, 'call', [
       this.callee.property.name = 'apply';
     else if (_(this).type !== 'apply')
       this.callee = this.callee.get('apply');
-    return this
+    prep(this);
+    return this;
   }
 ]);
 Mixin.use('arrays', CallExpression.prototype, {
@@ -872,8 +916,8 @@ define(CallExpression.prototype, {
   set receiver(v){
     if (!v || v === 'this')
       v = new ThisExpression;
-    else if (!ASTNode.isNode(v))
-      v = ASTNode.createNode(v);
+    else if (!isNode(v))
+      v = $(v);
 
     var self = _(this);
     if ('receiver' in self)
@@ -881,6 +925,7 @@ define(CallExpression.prototype, {
     else
       this.arguments.unshift(v);
     self.receiver = v;
+    prep(this.arguments);
   }
 });
 
@@ -1019,6 +1064,7 @@ nodeTypes.register(FunctionDeclaration, Statement, ['function', 'functiondecl'],
       out[key] = this[key];
     }, this);
     out.params = new ASTArray(this.params);
+    prep(out);
     return out;
   },
   function toDeclaration(){
@@ -1049,6 +1095,7 @@ nodeTypes.register(FunctionExpression, Expression, ['function', 'functionexpr'],
       out[key] = this[key];
     }, this);
     out.params = new ASTArray(this.params);
+    prep(out);
     return out;
   },
   function toStatement(){
@@ -1075,6 +1122,7 @@ function Identifier(name){
     this.name = name.name;
   else
     this.name = name;
+  prep(this);
 }
 nodeTypes.register(Identifier, Expression, 'ident', [
   function isSame(value){
@@ -1085,6 +1133,24 @@ nodeTypes.register(Identifier, Expression, 'ident', [
   },
   function isDifferent(value){
     return this.name != value;
+  },
+  function SET(value){
+    return new AssignmentExpression('=', this.clone(), value);
+  },
+  function OR(right){
+    return new LogicalExpression('||', this.clone(), right);
+  },
+  function AND(right){
+    return new LogicalExpression('&&', this.clone(), right);
+  },
+  function IN(right){
+    return new BinaryExpression('in', this.clone(), right);
+  },
+  function keyOf(object){
+    return new MemberExpression(object, this.clone(), true);
+  },
+  function DELETE(from){
+    return new UnaryExpression('delete', this.keyOf(object));
   }
 ]);
 
@@ -1110,6 +1176,7 @@ nodeTypes.register(IfStatement, Statement, 'if', []);
 
 function Literal(value){
   this.value = value;
+  prep(this);
 }
 nodeTypes.register(Literal, Expression, 'literal', [
   function isSame(value){
@@ -1181,11 +1248,11 @@ nodeTypes.register(MemberExpression, Expression, 'member', [
 // ### NewExpression ###
 // #####################
 
-function NewExpression(callee, args){
+function NewExpression(callee, arguments){
   this.callee = assertInstance(callee, Expression);
   this.arguments = new ASTArray;
-  if (args)
-    this.append(args);
+  if (arguments)
+    this.append(arguments);
   prep(this);
 }
 nodeTypes.register(NewExpression, Expression, 'new', []);
@@ -1242,6 +1309,7 @@ function ObjectExpression(properties){
     this.append(properties);
   else if (isObject(properties))
     this.set(properties);
+  prep(this);
 }
 nodeTypes.register(ObjectExpression, Expression, 'object', [
   function nameMethods(){
@@ -1267,6 +1335,7 @@ function Program(body, comments){
   if (!(body instanceof ASTArray))
     body = new ASTArray(body);
   this.body = body;
+  prep(this);
 
 }
 nodeTypes.register(Program, ASTNode, 'program', [
@@ -1499,6 +1568,8 @@ nodeTypes.register(VariableDeclaration, Declaration, 'var', [
         if (item === null || item instanceof ASTNode)
           this.append(new VariableDeclarator(k, item));
       }
+    } else if (typeof vars === 'string') {
+      this.append(new VariableDeclarator(vars));
     }
     return this;
   }
@@ -1563,23 +1634,30 @@ nodeTypes.register(WithStatement, Statement, 'with', []);
 // ### ImmediatelyInvokedFunctionExpression ###
 // ############################################
 
-function ImmediatelyInvokedFunctionExpression(func, args){
-  if (!args && func instanceof Array) {
-    args = func;
+function ImmediatelyInvokedFunctionExpression(func, arguments){
+  if (!arguments && func instanceof Array) {
+    arguments = func;
     func = null;
   }
   if (!func)
     func = new FunctionExpression;
 
-  CallExpression.call(this, func, args);
+  CallExpression.call(this, func, arguments);
 }
 nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, ['function', 'iife'], [
   function toSource(){
     return '('+CallExpression.prototype.toSource.call(this)+')';
   },
+  function prepend(statement){
+    this.callee.body.prepend(statement);
+    return this;
+  },
   function append(statement){
     this.callee.body.append(statement);
     return this;
+  },
+  function remove(item){
+    return this.callee.body.remove(item);
   },
   function pop(){
     return this.callee.body.pop();
@@ -1593,12 +1671,12 @@ nodeTypes.register(ImmediatelyInvokedFunctionExpression, CallExpression, ['funct
       arg = new Identifier(arg);
     } else if (!isObject(arg)) {
       arg = new Literal(arg);
-      this.callee.params.push(arg.identity);
-      this.arguments.push(new Literal(arg));
+      this.callee.params.append(arg.identity);
+      this.arguments.append(new Literal(arg));
       return this;
     }
-    this.callee.params.push(arg);
-    this.arguments.push(arg);
+    this.callee.params.append(arg);
+    this.arguments.append(arg);
     return this;
   },
   function returns(name){
@@ -1621,6 +1699,7 @@ function ArrayPattern(elements){
     if (elements)
       this.append(elements);
   }
+  prep(this);
 }
 nodeTypes.register(ArrayPattern, ASTNode, 'arraypattern', []);
 Mixin.use('arrays', ArrayPattern.prototype, {
@@ -1680,7 +1759,7 @@ Mixin.create('classes', function(o){
     set inherits(v){
       if (typeof v === 'string')
         v = new Identifier(v);
-      if (ASTNode.isNode(v)) {
+      if (isNode(v)) {
         if (v instanceof Identifier) {
           this.superClass = v;
         } else if (from.matches('class')) {
@@ -1734,14 +1813,15 @@ Mixin.create('classes', function(o){
         self.desugarSuper();
 
       var closure = ctor.scopedDeclaration();
-      closure.pop();
+      var ret = closure.pop();
 
       if (self.superClass)
         closure.addArgument(self.superClass);
 
       closure.append(self.generatePrototype());
-      closure.returns(ctor.id);
+      closure.append(ret);
 
+      prep(closure.callee);
       if (this.id) {
         var decl = closure.declaration(ctor.id);
         decl.identity = ctor.id.name;
@@ -1772,7 +1852,6 @@ Mixin.use('arrays', ClassBody.prototype, {
   property: 'body',
   type: MethodDefinition
 });
-
 
 
 // ########################
@@ -1828,7 +1907,7 @@ function MethodDefinition(key, value, kind){
 }
 nodeTypes.register(MethodDefinition, ASTNode, 'method', [
   function toProperty(){
-    return new Property(this.kind || 'get', this.key, this.value);
+    return new Property(this.kind || 'get', this.key.clone(), this.value.clone());
   }
 ]);
 
@@ -1858,6 +1937,7 @@ nodeTypes.register(ClassHeritage, ASTNode, 'heritage', []);
 
 function ExportDeclaration(declaration){
   this.declaration = assertInstance(declaration, Declaration);
+  prep(this);
 }
 nodeTypes.register(ExportDeclaration, Declaration, 'export', []);
 
@@ -1870,6 +1950,7 @@ nodeTypes.register(ExportDeclaration, Declaration, 'export', []);
 function ExportSpecifier(id, from){
   this.id = makeIdentifier(id);
   this.from = assertInstance(from, [null, Literal, Path]);
+  prep(this);
 }
 nodeTypes.register(ExportSpecifier, ASTNode, 'exportspec', []);
 
@@ -1885,6 +1966,7 @@ function ExportSpecifierSet(specifiers){
   if (specifiers)
     this.append(specifiers);
   this.from = from;
+  prep(this);
 }
 nodeTypes.register(ExportSpecifierSet, ASTNode, 'exportspecs', []);
 Mixin.use('arrays', ExportSpecifierSet.prototype, {
@@ -1929,6 +2011,7 @@ function ImportDeclaration(specifiers, from){
   if (specifiers)
     this.append(specifiers);
   this.from = from;
+  prep(this);
 }
 nodeTypes.register(ImportDeclaration, Declaration, 'import', []);
 Mixin.use('arrays', ImportDeclaration.prototype, {
@@ -1945,6 +2028,7 @@ Mixin.use('arrays', ImportDeclaration.prototype, {
 function ImportSpecifier(id, from){
   this.id = makeIdentifier(id);
   this.from = assertInstance(from, [null, Literal, Path]);
+  prep(this);
 }
 nodeTypes.register(ImportSpecifier, ASTNode, 'importspec', []);
 
@@ -1957,6 +2041,7 @@ nodeTypes.register(ImportSpecifier, ASTNode, 'importspec', []);
 function ModuleDeclaration(id, body){
   this.id = makeIdentifier(id);
   this.body = BlockStatement.createBlock(body);
+  prep(this);
 }
 nodeTypes.register(ModuleDeclaration, Declaration, 'module', []);
 
@@ -1973,6 +2058,7 @@ function ObjectPattern(properties){
     this.append(properties);
   else if (isObject(properties))
     this.set(properties);
+  prep(this);
 }
 nodeTypes.register(ObjectPattern, ASTNode, 'objectpattern', []);
 Mixin.use('object', ObjectPattern.prototype);
@@ -1990,6 +2076,7 @@ Mixin.use('arrays', ObjectPattern.prototype, {
 
 function Path(body){
   this.body = BlockStatement.createBlock(body);
+  prep(this);
 }
 nodeTypes.register(Path, ASTNode, 'path', []);
 Mixin.use('arrays', Path.prototype, {
@@ -2035,14 +2122,17 @@ function QuasiLiteral(quasis, expressions){
 }
 nodeTypes.register(QuasiLiteral, Expression, ['quasi', 'quasiliteral'], [
   function toFunction(tag){
-    var raw = new ArrayExpression,
+    var components = new ArrayExpression,
         params = new ASTArray(this.expressions);
 
-    params.unshift(raw)
 
-    for (var i=0; i < this.quasis.length; i++)
-      raw.append(new Literal(this.quasis[i].value.raw));
+    for (var i=0; i < this.quasis.length; i++) {
+      components.append(freeze.call(new ObjectExpression(this.quasis[i].value)));
+    }
 
+    var identity = $(this.identity);
+    params.unshift(identity.OR(identity.SET(freeze.call(components))));
+    this.parentScope().parentScope().declare(this.identity);
     return (tag || QUASI).clone().call(params);
   },
   function desugar(tag){
@@ -2051,10 +2141,12 @@ nodeTypes.register(QuasiLiteral, Expression, ['quasi', 'quasiliteral'], [
   }
 ]);
 
+var freeze = $('Object').get('freeze');
+
 
 var QUASI = functionAST(function(r){
-  for (var i = arguments.length - 1; r[--i] += arguments[i+1];);
-  return r.join('');
+  for (var i = arguments.length - 1, o=''; o += r[--i].raw + arguments[i+1];);
+  return o;
 });
 
 
