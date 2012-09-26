@@ -9,10 +9,10 @@ function desugar(ast, selector){
 
 module.exports = function(ast){
   desugar(ast, 'class');
+  desugar(ast, 'module');
   desugar(ast, 'taggedquasi');
   desugar(ast, 'quasi');
   desugar(ast, 'arrow');
-  desugar(ast, 'module');
   return ast;
 }
 

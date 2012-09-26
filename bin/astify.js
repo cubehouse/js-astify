@@ -3,8 +3,6 @@ var fs = require('fs'),
     astify = require('astify');
 
 
-Object.defineProperty(process, 'mainModule', { enumerable: false });
-
 var paths = [];
 var selected = [];
 var transformLocation = path.resolve(__dirname, '..', 'transformers');
@@ -48,7 +46,7 @@ var input = paths.shift(),
     output = paths.shift();
 
 var src = fs.readFileSync(input, 'utf8'),
-    ast = astify.parse(src).ast,
+    ast = astify.ASTNode.parse(src),
     inline = src.match(/^\/\/!#(.*?)\n/);
 
 inline && addTransforms(inline[1].split('|'));
