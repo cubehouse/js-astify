@@ -12,6 +12,7 @@ function desugar(selector){
 desugar('class');
 desugar('taggedquasi');
 desugar('quasi');
+desugar('arrow');
 desugar('module');
 
 
