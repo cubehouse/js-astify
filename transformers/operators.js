@@ -2,13 +2,13 @@ var ASTNode = require('astify').ASTNode,
     ASTArray = ASTNode.ASTArray;
 
 var funcs = {},
-    runtimeNames = {};
+    runtimeNames = Object.create(null);
 
 function get(type){
   var ops = ASTNode.types[type][0].operators;
   Object.keys(ops).forEach(function(key){
     funcs[key] = ASTNode.parse(ops[key]);
-    runtimeNames[funcs[key].name] = key;
+    runtimeNames[funcs[key].id.name] = key;
   });
 }
 
@@ -18,7 +18,7 @@ get('unary');
 get('update');
 get('assign');
 
-module.exports = convertAllOperators;
+module.exports = overload;
 
 function overload(ast){
   ast.find('class').forEach(function(subject){
@@ -28,7 +28,10 @@ function overload(ast){
         overloads[method.key.name] = true;
       }
     });
+
+      console.log(overloads)
   });
+  return ast;
 }
 
 function convertAllOperators(ast){
@@ -52,67 +55,86 @@ function convertAllOperators(ast){
   ast.prepend(functions);
   return ast;
 }
-/*
+
 var operators = {
-  // numeric
-  ADD                    : (a,b) => a + b,
-  SUBTRACT               : (a,b) => a - b,
-  DIVIDE                 : (a,b) => a / b,
-  MULTIPLY               : (a,b) => a * b,
-  MOD                    : (a,b) => a % b,
+// numeric
+function ADD(r){ return this + r }
+function SUBTRACT(r){ return this - r }
+function DIVIDE(r){ return this / r }
+function MULTIPLY(r){ return this * r }
+function MOD(r){ return this % r }
+// bitwise
+function BIT_XOR(r){ return this ^ r }
+function BIT_AND(r){ return this & r }
+function BIT_OR(r){ return this | r }
+function RIGHT_SHIFT(r){ return this >> r }
+function LEFT_SHIFT(r){ return this << r }
+function SIGNED_RIGHT_SHIFT(r){ return this >>> r }
+function BIT_NOT(){ return ~this }
+function TO_NUMBER(){ return +this }
+function NEGATE(){ return -this }
+// boolean
+function IS_EQUAL(r){ return this === r }
+function IS_SIMILAR(r){ return this == r }
+function IS_GREATER(r){ return this > r }
+function IS_LESS(r){ return this < r }
+function IS_INEQUAL(r){ return this !== r }
+function IS_DIFFERENT(r){ return this != r }
+function IS_EQ_OR_GREATER(r){ return this >= r }
+function IS_EQ_OR_LESS(r){ return this <= r }
+// logical
+function NOT(){ return !this }
+function OR(r){ return this || r }
+function AND(r){ return this && r }
+// mutate
+function SET(r){ return this = r }
+function SET_MULTIPLY(r){ return this *= r }
+function SET_DIVIDE(r){ return this /= r }
+function SET_MOD(r){ return this %= r }
+function SET_ADD(r){ return this += r }
+function SET_SUBTRACT(r){ return this -= r }
+function SET_LEFT_SHIFT(r){ return this <<= r }
+function SET_RIGHT_SHIFT(r){ return this >>= r }
+function SET_SIGNED_RIGHT_SHIFT(r){ return this >>>= r }
+function SET_AND(r){ return this &= r }
+function SET_XOR(r){ return this ^= r }
+function SET_OR(r){ return this |= r }
+function PRE_INCREMENT(){ return this.SET(this.ADD(1)) }
+function PRE_DECREMENT(){ return this.SET(this.SUBTRACT(1)) }
+function POST_INCREMENT(){ var c = this.CLONE(); this.PRE_INCREMENT(); return c; }
+function POST_DECREMENT(){ var c = this.CLONE(); this.PRE_DECREMENT(); return c; }
+// other
+function VOID(){ return void this }
+function TYPEOF(){ return typeof this }
+function IS_IN(r) { return this in r }
+function IS_INSTANCE(r) { return this instanceof r }
+function DELETE(r) { return delete this[r] }
 
-  // bitwise
-  BIT_XOR                : (a,b) => a ^ b,
-  BIT_AND                : (a,b) => a & b,
-  BIT_OR                 : (a,b) => a | b,
-  RIGHT_SHIFT            : (a,b) => a >> b,
-  LEFT_SHIFT             : (a,b) => a << b,
-  SIGNED_RIGHT_SHIFT     : (a,b) => a >>> b,
-  INVERSE                :     a => ~a,
 
 
-  TO_NUMBER              :     a => +a, a.valueOf()
-  NEGATE                 :     a => -a, MULTIPLY(a, -1).valueOf()
 
-  // boolean
-  IS_EQUAL               : (a,b) => a === b,
-  IS_SIMILAR             : (a,b) => a == b,
-  IS_GREATER             : (a,b) => a > b,
-  IS_LESS                : (a,b) => a < b,
-  IS_INEQUAL             : (a,b) => a !== b, !IS_EQUAL(a, b)
-  IS_DIFFERENT           : (a,b) => a != b, !IS_SIMILAR(a, b)
-  IS_EQ_OR_GREATER       : (a,b) => a >= b, IS_GREATER(a, b) || IS_SIMILAR(a, b)
-  IS_EQ_OR_LESS          : (a,b) => a <= b, IS_LESS(a, b) || IS_SIMILAR(a, b)
 
-  // logical
-  NOT                    :     a => !a,
-  OR                     : (a,b) => a || b, !NOT(a) || !NOT(b);
-  AND                    : (a,b) => a && b, !(NOT(a) && NOT(b));
-
-  // mutate
-  SET                    : (a,b) => a = b,
-  SET_MULTIPLY           : (a,b) => a *= b, SET(a, MULTIPLY(a, b))
-  SET_DIVIDE             : (a,b) => a /= b, SET(a, DIVIDE(a, b))
-  SET_MOD                : (a,b) => a %= b, SET(a, MOD(a, b))
-  SET_ADD                : (a,b) => a += b, SET(a, ADD(a, b))
-  SET_SUBTRACT           : (a,b) => a -= b, SET(a, SUBTRACT(a, b))
-  SET_LEFT_SHIFT         : (a,b) => a <<= b, SET(a, LEFT_SHIFT(a, b))
-  SET_RIGHT_SHIFT        : (a,b) => a >>= b, SET(a, RIGHT_SHIFT(a, b))
-  SET_SIGNED_RIGHT_SHIFT : (a,b) => a >>>= b, SET(a, SIGNED_RIGHT_SHIFT(a, b))
-  SET_AND                : (a,b) => a &= b, SET(a, AND(a, b))
-  SET_XOR                : (a,b) => a ^= b, SET(a, XOR(a, b))
-  SET_OR                 : (a,b) => a |= b, SET(a, XOR(a, b))
-  PRE_INCREMENT          :     a => SET(a, ADD(a, 1)),
-  PRE_DECREMENT          :     a => SET(a, SUBTRACT(a, 1)),
-  POST_INCREMENT         :     a => [CLONE(a), PRE_INCREMENT(a)][0],
-  POST_DECREMENT         :     a => [CLONE(a), PRE_DECREMENT(a)][0],
-
-  // other
-  VOID                   :     a => void a,
-  TYPEOF                 :     a => typeof a,
-  IS_IN                  : (a,b) => a in b,
-  IS_INSTANCE            : (a,b) => a instanceof b,
-};
-
-a && b
-!a || !b*/
+// derived versions
+function TO_NUMBER(){ return this.valueOf() }
+function NEGATE(){ return this.MULTIPLY(-1).valueOf() }
+function IS_INEQUAL(r){ return !this.IS_EQUAL(r) }
+function IS_DIFFERENT(r){ return !this.IS_SIMILAR(r) }
+function OR(r){ return !this.NOT() || !r.NOT() }
+function AND(r){ return !(this.NOT() && r.NOT()) }
+function IS_EQ_OR_GREATER(r){ return this.IS_GREATER(r) || this.IS_SIMILAR(r) }
+function IS_EQ_OR_LESS(r){ return this.IS_LESS(r) || this.IS_SIMILAR(r) }
+function SET_MULTIPLY(r){ return this.SET(this.MULTIPLY(r)) }
+function SET_DIVIDE(r){ return this.SET(this.DIVIDE(r)) }
+function SET_MOD(r){ return this.SET(this.MOD(r)) }
+function SET_ADD(r){ return this.SET(this.ADD(r)) }
+function SET_SUBTRACT(r){ return this.SET(this.SUBTRACT(r)) }
+function SET_LEFT_SHIFT(r){ return this.SET(this.LEFT_SHIFT(r)) }
+function SET_RIGHT_SHIFT(r){ return this.SET(this.RIGHT_SHIFT(r)) }
+function SET_SIGNED_RIGHT_SHIFT(r){ return this.SET(this.SIGNED_RIGHT_SHIFT(r)) }
+function SET_AND(r){ return this.SET(this.AND(r)) }
+function SET_XOR(r){ return this.SET(this.XOR(r)) }
+function SET_OR(r){ return this.SET(this.OR(r)) }
+function PRE_INCREMENT(){ return this.SET(this.ADD(1)) }
+function PRE_DECREMENT(){ return this.SET(this.SUBTRACT(1)) }
+function POST_INCREMENT(){ var c = this.CLONE(); this.PRE_INCREMENT(); return c; }
+function POST_DECREMENT(){ var c = this.CLONE(); this.PRE_DECREMENT(); return c; }

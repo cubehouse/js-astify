@@ -13,15 +13,16 @@ module geometry {
       sin   = Math.sin,
       PI    = Math.PI;
 
-  var isObject = o => o != null && typeof o === 'object' || typeof o === 'function';
-  var toUint32 = n => n >>> 0;
-  var toInt32 = n => n >> 0;
-  var toInt = n => n ? toFinite(n) + .5 | 0 : 0;
-  var toFinite = n => typeof n === 'number' ? n || 0 : isFinite(n /= 1) ? n : 0;
-  var isInt = n => typeof n === 'number' ? n | 0 === n : n instanceof Array ? n.every(isInt) : false;
-  var coerce = n => typeof n === 'number' ? [n, n] : n.length > 1 ? n : empty;
-
   var empty = [0, 0, 0, 0];
+
+  var isObject = o => o != null && typeof o === 'object' || typeof o === 'function',
+      toUint32 = n => n >>> 0,
+      toInt32 = n => n >> 0,
+      toInt = n => n ? toFinite(n) + .5 | 0 : 0,
+      toFinite = n => typeof n === 'number' ? n || 0 : isFinite(n /= 1) ? n : 0,
+      isInt = n => typeof n === 'number' ? n | 0 === n : n instanceof Array ? n.every(isInt) : false,
+      coerce = n => typeof n === 'number' ? [n, n] : n.length > 1 ? n : empty;
+
 
 
   export class Point {
@@ -73,8 +74,8 @@ module geometry {
     }
     SET(v){
       v = coerce(v);
-      this[0] = toFinite(v[0]);
-      this[1] = toFinite(v[1]);
+      this[0] = v[0];
+      this[1] = v[1];
     }
     NOT(v){
       return this[0] === 0 && this[1] === 0;
