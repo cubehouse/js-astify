@@ -1,8 +1,7 @@
-//!#es6
+//!#operators|es6
 
 module geometry {
   var byteString = Function.prototype.apply.bind(String.fromCharCode, null);
-
 
   var min   = Math.min,
       max   = Math.max,
@@ -20,8 +19,9 @@ module geometry {
   var toInt = n => n ? toFinite(n) + .5 | 0 : 0;
   var toFinite = n => typeof n === 'number' ? n || 0 : isFinite(n /= 1) ? n : 0;
   var isInt = n => typeof n === 'number' ? n | 0 === n : n instanceof Array ? n.every(isInt) : false;
+  var coerce = n => typeof n === 'number' ? [n, n] : n.length > 1 ? n : empty;
 
-
+  var empty = [0, 0, 0, 0];
 
 
   export class Point {
@@ -35,123 +35,65 @@ module geometry {
     set y(v){ this[1] = v }
     get size(){ return this.distance([0, 0]) }
     get quadrant(){ return (this[0] < 0) << 1 | (this[1] < 0) }
-    get isEmpty(){ return !(this[0] && this[1]) }
-    distance(p){
-      return sqrt(pow(n = this[0] - p[0], 2) + pow(n = this[1] - p[1], 2));
+
+    INVERSE(v){
+      return new Point(this[1], this[0]);
     }
-    clone(){
+    IS_SIMILAR(v){
+      v = coerce(v);
+      return this[0] === v[0] && this[1] === v[1];
+    }
+    IS_GREATER(v){
+      v = coerce(v);
+      return this[0] > v[0] && this[1] > v[1];
+    }
+    IS_LESS(v){
+      v = coerce(v);
+      return this[0] < v[0] && this[1] < v[1];
+    }
+    MULTIPLY(v){
+      v = coerce(v);
+      return new Point(this[0] * v[0], this[1] * v[1]);
+    }
+    ADD(v){
+      v = coerce(v);
+      return new Point(this[0] + v[0], this[1] + v[1]);
+    }
+    SUBTRACT(v){
+      v = coerce(v);
+      return new Point(this[0] - v[0], this[1] - v[1]);
+    }
+    DIVIDE(v){
+      v = coerce(v);
+      return new Point(this[0] / v[0], this[1] / v[1]);
+    }
+    MOD(v){
+      v = coerce(v);
+      return new Point(this[0] % v[0], this[1] % v[1]);
+    }
+    SET(v){
+      v = coerce(v);
+      this[0] = toFinite(v[0]);
+      this[1] = toFinite(v[1]);
+    }
+    NOT(v){
+      return this[0] === 0 && this[1] === 0;
+    }
+    CLONE(){
       return new Point(this[0], this[1]);
+    }
+    valueOf(){
+      return this[1] << 16 | this[0];
+    }
+    distance(value){
+      v = coerce(v);
+      return sqrt(pow(this[0] - value[0], 2) + pow(this[1] - value[1], 2));
     }
     average(point){
       return new Point((this[0] + point[0]) / 2, (this[1] + point[1]) / 2);
     }
-    multiply(point){
-      return new Point(this[0] * point[0], this[1] * point[1]);
-    }
-    add(point){
-      return new Point(this[0] + point[0], this[1] + point[1]);
-    }
-    subtract(point){
-      return new Point(this[0] - point[0], this[1] - point[1]);
-    }
-    combine(point){
-      return new Point(this[0], point[1]);
-    }
-    translate(n){
-      return new Point(this[0] + n, this[1] + n);
-    }
-    scale(n){
-      return new Point(this[0] * n, this[1] * n);
-    }
     lineTo(point){
       return new Line(this[0], this[1], point[0], point[1]);
-    }
-    set(x, y){
-      if (x == null) x = 0;
-      if (typeof x === 'number') {
-        this[0] = +x || 0;
-        this[1] = y == null ? x : +y || 0;
-      } else if (typeof x === 'string') {
-        this[0] = x.charCodeAt(0);
-        this[1] = x.charCodeAt(1);
-      } else if (x.length === 2) {
-        this[0] = x[0];
-        this[1] = x[1];
-      } else if ('x' in x && 'y' in x) {
-        this[0] = x.x;
-        this[1] = x.y;
-      } else {
-        throw new TypeError("Unable to determine type of "+x);
-      }
-      return this;
-    }
-    setString(v){
-      this[0] = v.charCodeAt(0);
-      this[1] = v.charCodeAt(1);
-      return this;
-    }
-    setValues(x, y){
-      this[0] = +x || 0;
-      this[1] = +x || 0;
-      return this;
-    }
-    setObject(p){
-      this[0] = p.x,
-      this[1] = p.y;
-      return this;
-    }
-    setIndexed(a){
-      this[0] = a[0];
-      this[1] = a[1];
-      return this;
-    }
-    offset(x, y){
-      if (x == null) x = 0;
-      if (typeof x === 'number') {
-        this[0] += +x || 0;
-        this[1] += y == null ? x : +y || 0;
-      } else if (typeof x === 'string') {
-        this[0] += x.charCodeAt(0);
-        this[1] += x.charCodeAt(1);
-      } else if (x.length === 2) {
-        this[0] += x[0];
-        this[1] += x[1];
-      } else if ('x' in x && 'y' in x) {
-        this[0] += x.x;
-        this[1] += x.y;
-      } else {
-        throw new TypeError("Unable to determine type of "+x);
-      }
-      return this;
-    }
-    offsetString(v){
-      this[0] += v.charCodeAt(0);
-      this[1] += v.charCodeAt(1);
-      return this;
-    }
-    offsetValues(x, y){
-      this[0] += +x || 0;
-      this[1] += +y || 0;
-      return this;
-    }
-    offsetObject(p){
-      this[0] += p.x,
-      this[1] += p.y;
-      return this;
-    }
-    offsetIndexed(a){
-      this[0] += a[0];
-      this[1] += a[1];
-      return this;
-    }
-    empty(){
-      this[0] = 0;
-      this[1] = 0;
-      return this;
-    }
-    isEqual(point){
-      return this[0] === point[0]
-          && this[1] === point[1];
     }
     toBytes(){
       return byteString(this);
