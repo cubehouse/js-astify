@@ -110,63 +110,74 @@ addConverter('arraypattern', patterns);
 addConverter('objectpattern', patterns);
 
 
+function Destructurer(parent, value, onAdd, onComplete){
+  this.parent = parent;
+  this.value = value;
+  this.add = onAdd;
+  this.complete = onComplete;
+  this.container = parent.parent;
+}
+
+Destructurer.prototype = new process.EventEmitter;
+
+Destructurer.prototype.run = function run(node){
+  this.emit('begin');
+  this.handle(node, []);
+  this.emit('complete');
+}
+
+Destructurer.prototype.handle = function handle(node, path){
+  if (node.matches('arraypattern')) {
+    node.elements.forEach(function(subnode, index){
+      this.handle(subnode, path.concat(index));
+    }, this);
+  } else if (node.matches('objectpattern')) {
+    node.properties.forEach(function(prop){
+      this.handle(prop.value, path.concat(prop.key.name));
+    }, this);
+  } else if (!this.root) {
+    this.root = node.clone();
+    this.container.insertAfter(this.root.set(this.resolve(path)).toStatement(), this.parent);
+    if (this.value.toSource() !== this.root.toSource())
+      this.emit('add', this.root, this.value.clone());
+  } else {
+    this.emit('add', node, this.resolve(path));
+  }
+};
+
+Destructurer.prototype.resolve = function resolve(path){
+  var root = this.root;
+  for (var i=0; i < path.length; i++)
+    root = root.get(path[i]);
+  return root;
+}
+
+
+
 function patterns(node){
   if (node.nearest('arraypattern') || node.nearest('objectpattern'))
     return;
 
   if (node.parent.matches('decl')) {
-    var value = node.parent.init;
-    var parent = node.parent.parent.parent;
-    var container = parent.parent;
-
-    var creator = function(name, value){
-      parent.declare(name.name, value);
-    }
-    var after = function(){
+    var handler = new Destructurer(node.parent.parent.parent, node.parent.init);
+    handler.on('add', function(name, value){
+      this.parent.declare(name.name, value);
+    });
+    handler.on('complete', function(){
       node.parent.parent.remove(node.parent);
-    }
+    });
   } else if (node.parent.right) {
-    var parent = node.parent.parent;
-    var value =  node.parent.right;
-    var container = parent.parent;
-    var creator = function(name, v){
-      container.insertBefore(name.set(v).toStatement(), parent);
-    };
-    var after = function(){
-      container.remove(parent);
-    }
+    var handler = new Destructurer(node.parent.parent, node.parent.right);
+    handler.on('add', function(name, v){
+      this.container.insertBefore(name.set(v).toStatement(), this.parent);
+    });
+    handler.on('complete', function(){
+      this.container.remove(this.parent);
+    });
   } else {
     return console.log(node);
   }
 
-  var root;
-
-  void function recurse(node, path){
-    if (node.matches('arraypattern')) {
-      node.elements.forEach(function(subnode, index){
-        recurse(subnode, path.concat(index));
-      });
-    } else if (node.matches('objectpattern')) {
-      node.properties.forEach(function(prop){
-        recurse(prop.value, path.concat(prop.key.name));
-      });
-    } else {
-      if (!root) {
-        root = node.clone();
-          container.insertAfter(root.set(resolvePath(root, path)).toStatement(), parent);
-        if (value.toSource() !== root.toSource())
-          creator(root, value.clone());
-      } else {
-        creator(node, resolvePath(root, path));
-      }
-    }
-  }(node, []);
-
-  after();
+  handler.run(node);
 }
 
-function resolvePath(root, path){
-  for (var i=0; i < path.length; i++)
-    root = root.get(path[i]);
-  return root;
-}
