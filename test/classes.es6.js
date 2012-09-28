@@ -66,13 +66,12 @@ module geometry {
       return this[1] << 16 | this[0];
     }
     set(v){
-      v = toArray(v)
-      this[0] = v[0]
-      this[1] = v[1]
+      v = toArray(v);
+      [this[0], this[1]] = v;
       return this
     }
     empty(v){
-      this[0] === this[1] === 0
+      this[0] = this[1] = 0
       return this
     }
     isEqual(v){
@@ -126,8 +125,7 @@ module geometry {
       return new Type(array)
     }
     toString(){
-      var x = this[0],
-          y = this[1]
+      var [x, y] = this;
       return `<Point ${x} ${y}>`
     }
   }
@@ -139,10 +137,7 @@ module geometry {
       this.set(x1, y1, x2, y2);
     }
     toString(){
-      var x1 = this[0],
-          y1 = this[1],
-          x2 = this[2],
-          y2 = this[3];
+      var [x1, y1, x2, y1] = this;
       return `<Line ${x1} ${y1} ${x2} ${y2}>`;
     }
     get x1(){ return this[0] }
@@ -183,17 +178,12 @@ module geometry {
       return this;
     }
     setIndexed(a){
-      this[0] = a[0];
-      this[1] = a[1];
-      this[2] = a[2];
-      this[3] = a[3];
+      [this[0], this[1], this[2], this[3]] = a;
       return this;
     }
     setPoints(p1, p2){
-      this[0] = p1[0];
-      this[1] = p1[1];
-      this[2] = p2[0];
-      this[3] = p2[1];
+      [this[0], this[1]] = p1;
+      [this[2], this[3]] = p2;
       return this;
     }
     setObject(o){
@@ -338,17 +328,12 @@ module geometry {
       return this;
     }
     setPoints(p1, p2){
-      this[0] = p1[0];
-      this[1] = p1[1];
-      this[2] = p2[0];
-      this[3] = p2[1];
+      [this[0], this[1]] = p1;
+      [this[2], this[3]] = p2;
       return this;
     }
     setIndexed(a){
-      this[0] = a[0];
-      this[1] = a[1];
-      this[2] = a[2];
-      this[3] = a[3];
+      [this[0], this[1], this[2], this[3]] = a;
       return this;
     }
     centerIn(rect){
@@ -360,8 +345,7 @@ module geometry {
         dx = toFinite(dx);
         dy = dy == null ? dx : toFinite(dy);
       } else if (dx instanceof Point) {
-        dy = dx[0];
-        dx = dx[1];
+        var [dx, dy] = dx;
       }
       return this.setValues(this[0] - dx, this[1] - dy, this[2] + dx, this[3] + dy);
     }
@@ -370,8 +354,7 @@ module geometry {
         dx = toFinite(dx);
         dy = dy == null ? dx : toFinite(dy);
       } else if (dx instanceof Point) {
-        dy = dx.y;
-        dx = dx.x;
+        var { x: dx, y: dy } = dx;
       }
       return this.setValues(this[0] + dx, this[1] + dy, this[2] + dx, this[3] + dy);
     }
@@ -407,8 +390,7 @@ module geometry {
             && x[3] <= this[3];
       }
       if (x instanceof Point) {
-        y = x[0];
-        x = x[1];
+        [x, y] = x;
       }
       return x >= this[0]
           && x <= this[2]
@@ -428,36 +410,31 @@ module geometry {
         return this.intersectRect(target);
     }
     intersectLine(line) {
-      return [
-        line.intersect(this.leftLine()),
-        line.intersect(this.topLine()),
-        line.intersect(this.rightLine()),
-        line.intersect(this.bottomLine()),
-      ];
+      return [line.intersect(this.leftLine()),
+              line.intersect(this.topLine()),
+              line.intersect(this.rightLine()),
+              line.intersect(this.bottomLine())];
+    }
+    intersectRect(rect){
+      return new Rect(max(this[0], rect[0]),
+                      max(this[1], rect[1]),
+                      min(this[2], rect[2]),
+                      min(this[3], rect[3]));
     }
     clone(){
       return new Rect(this[0], this[1], this[2], this[3]);
     }
     average(rect){
-      return new Rect(
-        (this[0] + rect[0]) / 2,
-        (this[1] + rect[1]) / 2,
-        (this[2] + rect[2]) / 2,
-        (this[3] + rect[3]) / 2);
-    }
-    intersectRect(rect){
-      return new Rect(
-        max(this[0], rect[0]),
-        max(this[1], rect[1]),
-        min(this[2], rect[2]),
-        min(this[3], rect[3]));
+      return new Rect((this[0] + rect[0]) / 2,
+                      (this[1] + rect[1]) / 2,
+                      (this[2] + rect[2]) / 2,
+                      (this[3] + rect[3]) / 2);
     }
     union(rect){
-      return new Rect(
-        min(this[0], rect[0]),
-        min(this[1], rect[1]),
-        max(this[2], rect[2]),
-        max(this[3], rect[3]));
+      return new Rect(min(this[0], rect[0]),
+                      min(this[1], rect[1]),
+                      max(this[2], rect[2]),
+                      max(this[3], rect[3]));
     }
     toBytes(){
       return byteString(this);
@@ -485,11 +462,8 @@ module geometry {
       return new Type(array);
     }
     toString(){
-      var left = this[0],
-          top = this[1],
-          width = this[2],
-          height = this[3];
-      return tsgg`<Rect ${left} ${top} ${width} ${height}>`;
+      var [left, top, width, height] = this;
+      return tag`<Rect ${left} ${top} ${width} ${height}>`;
     }
   }
 }

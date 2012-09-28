@@ -9,11 +9,12 @@ var ASTNode = require('astify').ASTNode,
 
 
 module.exports = function(ast){
-  [ 'arrow','class', 'module', 'taggedquasi', 'quasi'].forEach(function(selector){
+  [ 'arrow','class', 'module', 'taggedtemplate', 'template', 'arraypattern', 'objectpattern'].forEach(function(selector){
     ast.find(selector).forEach(function(item){
       converters[selector](item);
     });
   });
+  //.log(ast.find('function[id=set]').toJSON())
   return ast;
 }
 
@@ -79,7 +80,7 @@ addConverter('module', function(node){
   node.replaceWith(freeze.call(closure.get('call').call(args)).declaration(node.id));
 });
 
-addConverter('quasi', function(node, tag){
+addConverter('template', function(node, tag){
   var components = $('#array'),
       identity = $(node.identity),
       params = node.expressions;
@@ -93,8 +94,8 @@ addConverter('quasi', function(node, tag){
   node.replaceWith((tag || defaultQuasi).call(params));
 });
 
-addConverter('taggedquasi', function(node){
-  converters.quasi(node.quasi, node.tag);
+addConverter('taggedtemplate', function(node){
+  converters.template(node.quasi, node.tag);
   node.replaceWith(node.quasi);
 });
 
@@ -104,3 +105,68 @@ addConverter('export', function(node){
   decl.init.replaceWith(exports);
   node.replaceWith(node.declaration);
 });
+
+addConverter('arraypattern', patterns);
+addConverter('objectpattern', patterns);
+
+
+function patterns(node){
+  if (node.nearest('arraypattern') || node.nearest('objectpattern'))
+    return;
+
+  if (node.parent.matches('decl')) {
+    var value = node.parent.init;
+    var parent = node.parent.parent.parent;
+    var container = parent.parent;
+
+    var creator = function(name, value){
+      parent.declare(name.name, value);
+    }
+    var after = function(){
+      node.parent.parent.remove(node.parent);
+    }
+  } else if (node.parent.right) {
+    var parent = node.parent.parent;
+    var value =  node.parent.right;
+    var container = parent.parent;
+    var creator = function(name, v){
+      container.insertBefore(name.set(v).toStatement(), parent);
+    };
+    var after = function(){
+      container.remove(parent);
+    }
+  } else {
+    return console.log(node);
+  }
+
+  var root;
+
+  void function recurse(node, path){
+    if (node.matches('arraypattern')) {
+      node.elements.forEach(function(subnode, index){
+        recurse(subnode, path.concat(index));
+      });
+    } else if (node.matches('objectpattern')) {
+      node.properties.forEach(function(prop){
+        recurse(prop.value, path.concat(prop.key.name));
+      });
+    } else {
+      if (!root) {
+        root = node.clone();
+          container.insertAfter(root.set(resolvePath(root, path)).toStatement(), parent);
+        if (value.toSource() !== root.toSource())
+          creator(root, value.clone());
+      } else {
+        creator(node, resolvePath(root, path));
+      }
+    }
+  }(node, []);
+
+  after();
+}
+
+function resolvePath(root, path){
+  for (var i=0; i < path.length; i++)
+    root = root.get(path[i]);
+  return root;
+}
