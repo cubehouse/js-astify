@@ -9,7 +9,7 @@ var ASTNode = require('astify').ASTNode,
 
 
 module.exports = function(ast){
-  ['class', 'module', 'arrow', 'taggedquasi', 'quasi'].forEach(function(selector){
+  [ 'arrow','class', 'module', 'taggedquasi', 'quasi'].forEach(function(selector){
     ast.find(selector).forEach(function(item){
       converters[selector](item);
     });
@@ -30,9 +30,9 @@ addConverter('class', function(node){
   ctor.id = node.id || node.identity;
 
   if (node.superClass) {
-    var superclass = node.superClass;
+    var superclass = node.superClass && node.superClass.clone();
     node.find('member[object=super]').forEach(function(superCall){
-      var call = superCall.getParent();
+      var call = superCall.parent;
       call.callee = superclass.get('prototype').get(superCall.property);
       call.call();
     });
@@ -49,14 +49,14 @@ addConverter('class', function(node){
     closure.addArgument(node.superClass);
 
 
-  var prototype = $('#object', { constructor: node.id });
-  closure.append(node.id.set('prototype', prototype));
+  var prototype = $('#object', { constructor: node.id.clone() });
 
-  node.findAccessors().forEach(function(accessor){
-    prototype.append($('#property', accessor.kind, accessor.key, accessor.value));
+  node.find('method[key != constructor]').forEach(function(method){
+    prototype.append($('#property', method.kind || 'init', method.key.clone(), method.value.clone()));
   });
-  node.findMethods().forEach(prototype.set.bind(prototype));
 
+
+  closure.append(node.id.set('prototype', prototype));
 
   if (node.type === 'ClassDeclaration') {
     var decl = closure.declaration(ctor.id);
@@ -73,7 +73,7 @@ addConverter('arrow', function(node){
 
 addConverter('module', function(node){
   node.find('export').forEach(converters.export);
-  var closure = $('#functionexpr', null, ['global', 'exports'], node.body);
+  var closure = $('#functionexpr', null, ['global', 'exports'], node.body.clone());
   var args = [$('#this'), $('#this'), ASTNode.parse('typeof exports === "undefined" ? {} : exports')];
   closure.returns('exports');
   node.replaceWith(freeze.call(closure.get('call').call(args)).declaration(node.id));
@@ -82,15 +82,15 @@ addConverter('module', function(node){
 addConverter('quasi', function(node, tag){
   var components = $('#array'),
       identity = $(node.identity),
-      params = node.expressions.clone();
+      params = node.expressions;
 
   for (var i=0; i < node.quasis.length; i++) {
     components.append(freeze.call($('#object', node.quasis[i].value)));
   }
 
-  node.parentScope().declare(node.identity);
-  params.unshift(identity.OR(identity.SET(freeze.call(components))));
-  node.replaceWith((tag || defaultQuasi).clone().call(params));
+  node.topScope().declare(node.identity);
+  params.prepend(identity.OR(identity.SET(freeze.call(components))));
+  node.replaceWith((tag || defaultQuasi).call(params));
 });
 
 addConverter('taggedquasi', function(node){
@@ -100,7 +100,7 @@ addConverter('taggedquasi', function(node){
 
 addConverter('export', function(node){
   var decl = node.declaration.declarations[0],
-      exports = $('exports').set(decl.id, decl.init.clone());
+      exports = $('exports').set(decl.id, decl.init);
   decl.init.replaceWith(exports);
   node.replaceWith(node.declaration);
 });

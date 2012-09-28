@@ -46,9 +46,9 @@ module geometry {
     }
   }
 
-  //var toPoint = coercer(n => 'x' in n ? [n.x, n.y] : empty)
-  //var toLine = coercer(n => 'x1' in n ? [n.x1, n.y1, n.x2, n.y2] : empty)
-  //var toRect = coercer(n => 'left' in n ? [n.left, n.top, n.right, n.bottom] : empty)
+  var toPoint = coercer(n => 'x' in n ? [n.x, n.y] : empty)
+  var toLine = coercer(n => 'x1' in n ? [n.x1, n.y1, n.x2, n.y2] : empty)
+  var toRect = coercer(n => 'left' in n ? [n.left, n.top, n.right, n.bottom] : empty)
 
   export class Point {
     constructor(x, y){
