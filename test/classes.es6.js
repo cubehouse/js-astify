@@ -1,29 +1,54 @@
-//!#operators|es6
+//!#es6
 
 module geometry {
   var byteString = Function.prototype.apply.bind(String.fromCharCode, null);
 
-  var min   = Math.min,
-      max   = Math.max,
-      sqrt  = Math.sqrt,
-      pow   = Math.pow,
-      acos  = Math.acos,
-      atan2 = Math.atan2,
-      cos   = Math.cos,
-      sin   = Math.sin,
-      PI    = Math.PI;
+  var { min, max, sqrt, pow, acos, atan2, cos, sin, PI } = Math;
 
   var empty = [0, 0, 0, 0];
 
-  var isObject = o => o != null && typeof o === 'object' || typeof o === 'function',
-      toUint32 = n => n >>> 0,
-      toInt32 = n => n >> 0,
-      toInt = n => n ? toFinite(n) + .5 | 0 : 0,
-      toFinite = n => typeof n === 'number' ? n || 0 : isFinite(n /= 1) ? n : 0,
-      isInt = n => typeof n === 'number' ? n | 0 === n : n instanceof Array ? n.every(isInt) : false,
-      coerce = n => typeof n === 'number' ? [n, n] : n.length > 1 ? n : empty;
+  var isObject = o => o != o && typeof o === 'object' || typeof o === 'function'
 
+  var toUint32 = n => n >>> 0
 
+  var toInt32  = n => n >> 0
+
+  var toInt    = n => toFinite(n) + .5 | 0
+
+  var toFinite = n => typeof n === 'number'
+                      ? n || 0
+                      : isFinite(n /= 1)
+                        ? n
+                        : 0
+
+  var isInt    = n => typeof n === 'number'
+                      ? n | 0 === n
+                      : n instanceof Array
+                        ? n.every(isInt)
+                        : false
+
+  var toArray  = n => typeof n === 'number'
+                      ? [n, n, n, n]
+                      : n != null && n.length
+                        ? n
+                        : empty
+
+  function coercer(handler){
+    return function(n){
+      if (n == null) return empty
+      switch (typeof n) {
+        case 'boolean':
+        case 'string': n /= 1
+        case 'number': return n === n ? [n,n,n,n] : empty
+        case 'object': if ('length' in n) return n
+        case 'function': return handler(n)
+      }
+    }
+  }
+
+  //var toPoint = coercer(n => 'x' in n ? [n.x, n.y] : empty)
+  //var toLine = coercer(n => 'x1' in n ? [n.x1, n.y1, n.x2, n.y2] : empty)
+  //var toRect = coercer(n => 'left' in n ? [n.left, n.top, n.right, n.bottom] : empty)
 
   export class Point {
     constructor(x, y){
@@ -37,85 +62,73 @@ module geometry {
     get size(){ return this.distance([0, 0]) }
     get quadrant(){ return (this[0] < 0) << 1 | (this[1] < 0) }
 
-    INVERSE(v){
-      return new Point(this[1], this[0]);
-    }
-    IS_SIMILAR(v){
-      v = coerce(v);
-      return this[0] === v[0] && this[1] === v[1];
-    }
-    IS_GREATER(v){
-      v = coerce(v);
-      return this[0] > v[0] && this[1] > v[1];
-    }
-    IS_LESS(v){
-      v = coerce(v);
-      return this[0] < v[0] && this[1] < v[1];
-    }
-    MULTIPLY(v){
-      v = coerce(v);
-      return new Point(this[0] * v[0], this[1] * v[1]);
-    }
-    ADD(v){
-      v = coerce(v);
-      return new Point(this[0] + v[0], this[1] + v[1]);
-    }
-    SUBTRACT(v){
-      v = coerce(v);
-      return new Point(this[0] - v[0], this[1] - v[1]);
-    }
-    DIVIDE(v){
-      v = coerce(v);
-      return new Point(this[0] / v[0], this[1] / v[1]);
-    }
-    MOD(v){
-      v = coerce(v);
-      return new Point(this[0] % v[0], this[1] % v[1]);
-    }
-    SET(v){
-      v = coerce(v);
-      this[0] = v[0];
-      this[1] = v[1];
-    }
-    NOT(v){
-      return this[0] === 0 && this[1] === 0;
-    }
-    CLONE(){
-      return new Point(this[0], this[1]);
-    }
     valueOf(){
       return this[1] << 16 | this[0];
     }
-    distance(value){
-      v = coerce(v);
-      return sqrt(pow(this[0] - value[0], 2) + pow(this[1] - value[1], 2));
+    set(v){
+      v = toArray(v)
+      this[0] = v[0]
+      this[1] = v[1]
+      return this
     }
-    average(point){
-      return new Point((this[0] + point[0]) / 2, (this[1] + point[1]) / 2);
+    empty(v){
+      this[0] === this[1] === 0
+      return this
     }
-    lineTo(point){
-      return new Line(this[0], this[1], point[0], point[1]);
+    isEqual(v){
+      v = toArray(v)
+      return this[0] === v[0] && this[1] === v[1]
+    }
+    distance(v){
+      v = toArray(v)
+      return sqrt(pow(this[0] - v[0], 2) + pow(this[1] - v[1], 2))
+    }
+    clone(){
+      return new Point(this[0], this[1])
+    }
+    multiply(v){
+      v = toArray(v)
+      return new Point(this[0] * v[0], this[1] * v[1])
+    }
+    add(v){
+      v = toArray(v)
+      return new Point(this[0] + v[0], this[1] + v[1])
+    }
+    subtract(v){
+      v = toArray(v)
+      return new Point(this[0] - v[0], this[1] - v[1])
+    }
+    divide(v){
+      v = toArray(v)
+      return new Point(this[0] / v[0], this[1] / v[1])
+    }
+    average(v){
+      v = toArray(v)
+      return new Point((this[0] + v[0]) / 2, (this[1] + v[1]) / 2)
+    }
+    lineTo(v){
+      v = toArray(v)
+      return new Line(this[0], this[1], v[0], v[1])
     }
     toBytes(){
-      return byteString(this);
+      return byteString(this)
     }
     toArray(){
-      return [this[0], this[1]];
+      return [this[0], this[1]]
     }
     toObject(){
       return { x: this[0],
-               y: this[1] };
+               y: this[1] }
     }
     toBuffer(Type){
-      var array = this.toArray();
-      if (!Type)
-        Type = isInt(array) ? Uint32Array : Float64Array;
-      return new Type(array);
+      var array = [this[0], this[1]]
+      Type || (Type = isInt(array) ? Uint32Array : Float64Array)
+      return new Type(array)
     }
     toString(){
       var x = this[0],
-          y = this[1];
-      return `<Point ${x} ${y}>`;
+          y = this[1]
+      return `<Point ${x} ${y}>`
     }
   }
 
@@ -124,6 +137,13 @@ module geometry {
     constructor(x1, y1, x2, y2){
       this.length = 4;
       this.set(x1, y1, x2, y2);
+    }
+    toString(){
+      var x1 = this[0],
+          y1 = this[1],
+          x2 = this[2],
+          y2 = this[3];
+      return `<Line ${x1} ${y1} ${x2} ${y2}>`;
     }
     get x1(){ return this[0] }
     get y1(){ return this[1] }
@@ -230,13 +250,6 @@ module geometry {
         Type = isInt(array) ? Uint32Array : Float64Array;
       }
       return new Type(array);
-    }
-    toString(){
-      var x1 = this[0],
-          y1 = this[1],
-          x2 = this[2],
-          y2 = this[3];
-      return `<Line ${x1} ${y1} ${x2} ${y2}>`;
     }
   }
 
@@ -476,7 +489,7 @@ module geometry {
           top = this[1],
           width = this[2],
           height = this[3];
-      return `<Rect ${left} ${top} ${width} ${height}>`;
+      return tsgg`<Rect ${left} ${top} ${width} ${height}>`;
     }
   }
 }
