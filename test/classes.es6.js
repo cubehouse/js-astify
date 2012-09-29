@@ -33,6 +33,7 @@ module geometry {
                         ? n
                         : empty
 
+
   function coercer(handler){
     return function(n){
       if (n == null) return empty
@@ -46,13 +47,77 @@ module geometry {
     }
   }
 
-  var toPoint = coercer(n => 'x' in n ? [n.x, n.y] : empty)
-  var toLine = coercer(n => 'x1' in n ? [n.x1, n.y1, n.x2, n.y2] : empty)
-  var toRect = coercer(n => 'left' in n ? [n.left, n.top, n.right, n.bottom] : empty)
+  var toVector2D = coercer(n => empty);
+  var toPoint    = coercer(n => 'x' in n ? [n.x, n.y] : empty);
+  var toSize     = coercer(n => 'w' in n ? [n.w, n.h] : empty);
+  var toLine     = coercer(n => 'x1' in n ? [n.x1, n.y1, n.x2, n.y2] : empty);
+  var toRect     = coercer(n => 'w' in n && 'x' in n ? [n.x, n.y, n.w, n.h] : empty);
 
-  export class Point {
+
+  export class Vector2D {
+    constructor(a, b){
+      this[0] = a;
+      this[1] = b;
+    }
+    toString(){
+      return `<${this.constructor.name} ${this[0]} ${this[1]}>`;
+    }
+    valueOf(){
+      return this[1] << 16 | this[0];
+    }
+    inspect(){
+      return this.toString()
+    }
+    empty(v){
+      this[0] = this[1] = 0
+      return this
+    }
+    set(v){
+      [this[0], this[1]] = toVector2D(v);
+      return this
+    }
+    isEqual(v){
+      v = toPoint(v)
+      return this[0] === v[0] && this[1] === v[1]
+    }
+    clone(){
+      return new this.constructor(this[0], this[1])
+    }
+    multiply(v){
+      v = toPoint(v)
+      return new this.constructor(this[0] * v[0], this[1] * v[1])
+    }
+    add(v){
+      v = toPoint(v)
+      return new this.constructor(this[0] + v[0], this[1] + v[1])
+    }
+    subtract(v){
+      v = toPoint(v)
+      return new this.constructor(this[0] - v[0], this[1] - v[1])
+    }
+    divide(v){
+      v = toPoint(v)
+      return new this.constructor(this[0] / v[0], this[1] / v[1])
+    }
+    average(v){
+      v = toPoint(v)
+      return new this.constructor((this[0] + v[0]) / 2, (this[1] + v[1]) / 2)
+    }
+    toBytes(){
+      return byteString(this)
+    }
+    toArray(){
+      return [this[0], this[1]]
+    }
+    toBuffer(Type){
+      var array = [this[0], this[1]]
+      Type || (Type = isInt(array) ? Uint32Array : Float64Array)
+      return new Type(array)
+    }
+  }
+
+  export class Point extends Vector2D {
     constructor(x, y){
-      this.length = 2;
       this.set(x, y);
     }
     get x(){ return this[0] }
@@ -62,83 +127,44 @@ module geometry {
     get size(){ return this.distance([0, 0]) }
     get quadrant(){ return (this[0] < 0) << 1 | (this[1] < 0) }
 
-    valueOf(){
-      return this[1] << 16 | this[0];
-    }
-    set(v){
-      v = toArray(v);
-      [this[0], this[1]] = v;
-      return this
-    }
-    empty(v){
-      this[0] = this[1] = 0
-      return this
-    }
-    isEqual(v){
-      v = toArray(v)
-      return this[0] === v[0] && this[1] === v[1]
-    }
     distance(v){
-      v = toArray(v)
+      v = toPoint(v)
       return sqrt(pow(this[0] - v[0], 2) + pow(this[1] - v[1], 2))
     }
-    clone(){
-      return new Point(this[0], this[1])
-    }
-    multiply(v){
-      v = toArray(v)
-      return new Point(this[0] * v[0], this[1] * v[1])
-    }
-    add(v){
-      v = toArray(v)
-      return new Point(this[0] + v[0], this[1] + v[1])
-    }
-    subtract(v){
-      v = toArray(v)
-      return new Point(this[0] - v[0], this[1] - v[1])
-    }
-    divide(v){
-      v = toArray(v)
-      return new Point(this[0] / v[0], this[1] / v[1])
-    }
-    average(v){
-      v = toArray(v)
-      return new Point((this[0] + v[0]) / 2, (this[1] + v[1]) / 2)
-    }
     lineTo(v){
-      v = toArray(v)
+      v = toPoint(v)
       return new Line(this[0], this[1], v[0], v[1])
     }
-    toBytes(){
-      return byteString(this)
-    }
-    toArray(){
-      return [this[0], this[1]]
-    }
     toObject(){
-      return { x: this[0],
-               y: this[1] }
+      return { x: this[0], y: this[1] }
     }
-    toBuffer(Type){
-      var array = [this[0], this[1]]
-      Type || (Type = isInt(array) ? Uint32Array : Float64Array)
-      return new Type(array)
+  }
+
+  export class Size extends Vector2D {
+    constructor(w, h){
+      this.length = 2;
+      this.set(w, h);
     }
-    toString(){
-      var [x, y] = this;
-      return `<Point ${x} ${y}>`
+    get w(){ return this[0] }
+    get h(){ return this[1] }
+    set w(v){ this[0] = v }
+    set h(v){ this[1] = v }
+    get area(){ return this[0] * this[1] }
+    toObject(){
+      return { w: this[0], h: this[1] }
     }
   }
 
 
   export class Line {
     constructor(x1, y1, x2, y2){
-      this.length = 4;
       this.set(x1, y1, x2, y2);
     }
     toString(){
-      var [x1, y1, x2, y1] = this;
-      return `<Line ${x1} ${y1} ${x2} ${y2}>`;
+      return `<Line ${this[0]}  ${this[1]} ${this[2]} ${this[3]}>`;
+    }
+    inspect(){
+      return this.toString()
     }
     get x1(){ return this[0] }
     get y1(){ return this[1] }
@@ -157,41 +183,7 @@ module geometry {
     max(){ return new Point(this.maxX, this.maxY) }
     min(){ return new Point(this.minX, this.minY) }
     set(x1, y1, x2, y2){
-      if (typeof x1 === 'number' || x1 == null)
-        return this.setValues(x1, y1, x2, y2);
-      if  (typeof x1 === 'string')
-        return this.setString(x1);
-      if (x1 instanceof Point)
-        return this.setPoints(x1, y1);
-      if (x1.length === 4)
-        return this.setIndexed(x1);
-      if (isObject(x1) && 'x1' in x1)
-        return this.setObject(x1);
-
-      throw new TypeError('Line#set: Unrecognized value');
-    }
-    setValues(x1, y1, x2, y2){
-      this[0] = toFinite(x1);
-      this[1] = toFinite(y1);
-      this[2] = toFinite(x2);
-      this[3] = toFinite(y2);
-      return this;
-    }
-    setIndexed(a){
-      [this[0], this[1], this[2], this[3]] = a;
-      return this;
-    }
-    setPoints(p1, p2){
-      [this[0], this[1]] = p1;
-      [this[2], this[3]] = p2;
-      return this;
-    }
-    setObject(o){
-      this[0] = o.x1;
-      this[1] = o.y1;
-      this[2] = o.x2;
-      this[3] = o.y2;
-      return this;
+      [this[0], this[1], this[2], this[3]] = toLine(x1, y1, x2, y2);
     }
     intersect(line) {
       var ax = this[0] - this[2],
@@ -244,110 +236,97 @@ module geometry {
   }
 
   export class Rect {
-    constructor(left, top, width, height){
-      this.length = 4;
-      this.set(left, top, width, height);
+    constructor(x, y, w, h){
+      this.set(x, y, w, h);
     }
-    get left(){ return this[0] }
-    get top(){ return this[1] }
-    get width(){ return this[2] }
-    get height(){ return this[3] }
-    get centerX(){ return (this[0] + this[2]) / 2 }
-    get centerY(){ return (this[1] + this[3]) / 2 }
-    get isEmpty(){ return this[2] <= 0 || this[3] <= 0 }
-    center(){
-      return new Point((this[0] + this[2]) / 2, (this[1] + this[3]) / 2);
+    toString(){
+      return `<Rect ${this[0]} ${this[1]} ${this[2]} ${this[3]}>`;
     }
-    setCenter(x, y){
-      x == null && (x = 0);
+    inspect(){
+      return this.toString()
+    }
+    get x(){ return this[0] }
+    get y(){ return this[1] }
+    get w(){ return this[2] }
+    get h(){ return this[3] }
+    get cx(){ return (this[0] + this[2]) / 2 }
+    get cy(){ return (this[1] + this[3]) / 2 }
 
-      if (typeof x === 'number')
-        y == null && (y = x);
-      else
-        y = x[1], x = x[0];
+    set x(v){ this[0] = v }
+    set y(v){ this[1] = v }
+    set w(v){ this[2] = v }
+    set h(v){ this[3] = v }
+    set cx(v){ this[0] = v + this[2] / 2 }
+    set cy(v){ this[1] = v + this[3] / 2 }
 
-      this[0] = x + this[2] / 2;
-      this[1] = y + this[3] / 2;
-      return this;
+    getSize(){
+      return new Size(this[2], this[3])
+    }
+    getPosition(){
+      return new Point(this[0], this[1])
+    }
+    getCenter(){
+      return new Point(this.cx, this.cy)
+    }
+    setPosition(v){
+      [this[0], this[1]] = toPoint(v)
+      return this
+    }
+    setSize(v){
+      [this[2], this[3]] = toSize(v)
+      return this
+    }
+    setCenter(cx, cy){
+      this.cx = cx
+      this.cy = cy
+      return this
     }
     topLeft(){
-      return new Point(this[0], this[1]);
+      return new Point(this[0], this[1])
     }
     topRight(){
-      return new Point(this[2], this[1]);
+      return new Point(this[2], this[1])
     }
     bottomLeft(){
-      return new Point(this[0], this[3]);
+      return new Point(this[0], this[3])
     }
     bottomRight(){
-      return new Point(this[2], this[3]);
+      return new Point(this[2], this[3])
     }
-    topLine(){
-      return new Line(this[0], this[1], this[2], this[1]);
+    left(){
+      return new Line(this[0], this[1], this[0], this[3])
     }
-    rightLine(){
-      return new Line(this[2], this[1], this[2], this[3]);
+    top(){
+      return new Line(this[0], this[1], this[2], this[1])
     }
-    bottomLine(){
-      return new Line(this[0], this[3], this[2], this[3]);
+    right(){
+      return new Line(this[2], this[1], this[2], this[3])
     }
-    leftLine(){
-      return new Line(this[0], this[1], this[0], this[3]);
+    bottom(){
+      return new Line(this[0], this[3], this[2], this[3])
     }
-    diaganolTLBR(){
-      return new Line(this[0], this[1], this[2], this[3]);
+    descender(){
+      return new Line(this[0], this[1], this[2], this[3])
     }
-    diaganolTRBL(){
-      return new Line(this[2], this[1], this[0], this[3]);
+    ascender(){
+      return new Line(this[2], this[1], this[0], this[3])
     }
-    set(left, top, width, height){
-      if (typeof left === 'number' || left == null)
-        return this.setValues(left, top, width, height);
-      if  (typeof left === 'string')
-        return this.setString(left);
-      if (left instanceof Point)
-        return this.setPoints(left, top);
-      if (left.length === 4)
-        return this.setIndexed(left);
-
-      throw new TypeError('Rect#set: Unrecognized value');
+    isEmpty(){
+      return this[2] <= 0 || this[3] <= 0
     }
-    setValues(left, top, width, height){
-      if (left == null) left = 0;
-      this[0] = toFinite(left);
-      this[1] = toFinite(top);
-      this[2] = toFinite(width);
-      this[3] = toFinite(height);
-      return this;
-    }
-    setString(v){
-      this[0] = v.charCodeAt(0);
-      this[1] = v.charCodeAt(1);
-      this[2] = v.charCodeAt(2);
-      this[3] = v.charCodeAt(3);
-      return this;
-    }
-    setPoints(p1, p2){
-      [this[0], this[1]] = p1;
-      [this[2], this[3]] = p2;
-      return this;
-    }
-    setIndexed(a){
-      [this[0], this[1], this[2], this[3]] = a;
-      return this;
-    }
-    centerIn(rect){
-      this.setCenter(rect.centerX, rect.centerY);
+    set(x, y, w, h){
+      [this[0], this[1], this[2], this[3]] = toRect(x, y, w, h);
       return this;
     }
     inflate(dx, dy){
       if (typeof dx === 'number') {
         dx = toFinite(dx);
         dy = dy == null ? dx : toFinite(dy);
-      } else if (dx instanceof Point) {
-        var [dx, dy] = dx;
+      } else if (dx.length === 2) {
+        dy = dx[1];
+        dx = dx[0];
       }
-      return this.setValues(this[0] - dx, this[1] - dy, this[2] + dx, this[3] + dy);
+      return this.set(this[0] - dx, this[1] - dy, this[2] + dx, this[3] + dy);
     }
     offset(dx, dy){
       if (typeof dx === 'number') {
@@ -356,16 +335,17 @@ module geometry {
       } else if (dx instanceof Point) {
         var { x: dx, y: dy } = dx;
       }
-      return this.setValues(this[0] + dx, this[1] + dy, this[2] + dx, this[3] + dy);
+      return this.set(this[0] + dx, this[1] + dy, this[2] + dx, this[3] + dy);
     }
     empty(){
-      return this.setValues(0, 0, 0, 0);
+      this[0] = this[1] = this[2] = this[3] = 0;
     }
     rotate(angle) {
-      var dx, dy, a, cx, cy, d;
-      angle = angle * PI / 180;
-      cx = this.centerX;
-      cy = this.centerY;
+      var dx, dy, a, d;
+      var { cx, cy } = this;
+
+      angle *= PI / 180;
+
       for (var i=0; i < 4; i += 2) {
         dx = this[i] - cx;
         dy = this[i + 1] - cy;
@@ -389,7 +369,7 @@ module geometry {
             && x[2] <= this[2]
             && x[3] <= this[3];
       }
-      if (x instanceof Point) {
+      if (x instanceof Vector2D) {
         [x, y] = x;
       }
       return x >= this[0]
@@ -403,23 +383,11 @@ module geometry {
             || this[2] < rect[0]
             || this[3] < rect[1]);
     }
-    intersect(target){
-      if (target instanceof Line)
-        return this.intersectLine(target);
-      if (target instanceof Rect)
-        return this.intersectRect(target);
-    }
-    intersectLine(line) {
-      return [line.intersect(this.leftLine()),
-              line.intersect(this.topLine()),
-              line.intersect(this.rightLine()),
-              line.intersect(this.bottomLine())];
-    }
-    intersectRect(rect){
-      return new Rect(max(this[0], rect[0]),
-                      max(this[1], rect[1]),
-                      min(this[2], rect[2]),
-                      min(this[3], rect[3]));
+    intersect(line) {
+      return [line.intersect(this.left()),
+              line.intersect(this.top()),
+              line.intersect(this.right()),
+              line.intersect(this.bottom())];
     }
     clone(){
       return new Rect(this[0], this[1], this[2], this[3]);
@@ -439,31 +407,43 @@ module geometry {
     toBytes(){
       return byteString(this);
     }
-    toPoints(){
+    toComponents(){
       return [new Point(this[0], this[1]),
-              new Point(this[2], this[3])];
+              new Size(this[2], this[3])];
     }
     toObject(){
-      return { left:    this[0],
-               top:     this[1],
-               width:   this[2],
-               height:  this[3],
-               centerX: this.centerX,
-               centerY: this.centerY };
+      return { x:  this[0],
+               y:  this[1],
+               w:  this[2],
+               h:  this[3],
+               cx: this.cx,
+               cy: this.cy };
     }
     toArray(){
       return [this[0], this[1], this[2], this[3]];
     }
     toBuffer(Type){
-      var array = this.toArray();
-      if (!Type) {
-        Type = isInt(array) ? Uint32Array : Float64Array;
-      }
-      return new Type(array);
-    }
-    toString(){
-      var [left, top, width, height] = this;
-      return tag`<Rect ${left} ${top} ${width} ${height}>`;
+      Type || (Type = isInt(array) ? Uint32Array : Float64Array);
+      return new Type(this.toArray());
     }
   }
+
+  var desc = { configurable: true,
+               enumerable: false,
+               writable: true,
+               value: null };
+
+  function attr(obj, key, value){
+    desc.value = value
+    Object.defineProperty(obj, key, desc)
+    return obj
+  }
+
+  attr(Vector2D.prototype, 'length', 2)
+  attr(Rect.prototype, 'length', 4)
+  attr(Line.prototype, 'length', 4)
 }
+
+
+var x = new geometry.Point(200, 200);
+console.log(geometry.Point.prototype);
