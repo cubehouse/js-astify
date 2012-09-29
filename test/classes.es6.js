@@ -429,7 +429,6 @@ module geometry {
   }
 
   var desc = { configurable: true,
-               enumerable: false,
                writable: true,
                value: null };
 
