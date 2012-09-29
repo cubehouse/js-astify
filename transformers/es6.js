@@ -18,7 +18,9 @@ module.exports = function(ast){
   return ast;
 }
 
-
+var define = $('Object').get('defineProperty'),
+    constructor = $('#literal', 'constructor'),
+    hidden = $('#object', { enumerable: false });
 
 function addConverter(type, callback){
   converters[type] = callback;
@@ -45,19 +47,22 @@ addConverter('class', function(node){
 
   var closure = ctor.scopedDeclaration();
   var ret = closure.pop();
+  var prototype = $('#object');
 
-  if (node.superClass)
+  if (node.superClass) {
     closure.addArgument(node.superClass);
+    prototype.set('__proto__', node.superClass.get('prototype'));
+  }
 
-
-  var prototype = $('#object', { constructor: node.id.clone() });
+  prototype.set('constructor', node.id);
 
   node.find('method[key != constructor]').forEach(function(method){
     prototype.append($('#property', method.kind || 'init', method.key.clone(), method.value.clone()));
   });
 
-
   closure.append(node.id.set('prototype', prototype));
+  closure.append(define.call([ctor.id.get('prototype'), constructor, hidden]));
+  closure.append(ret);
 
   if (node.type === 'ClassDeclaration') {
     var decl = closure.declaration(ctor.id);
@@ -86,11 +91,11 @@ addConverter('template', function(node, tag){
       params = node.expressions;
 
   for (var i=0; i < node.quasis.length; i++) {
-    components.append(freeze.call($('#object', node.quasis[i].value)));
+    components.append($('#object', node.quasis[i].value));
   }
 
   node.topScope().declare(node.identity);
-  params.prepend(identity.OR(identity.SET(freeze.call(components))));
+  params.prepend(identity.OR(identity.SET(freeze.call(components.get('map').call([freeze])))));
   node.replaceWith((tag || defaultQuasi).call(params));
 });
 
@@ -137,7 +142,7 @@ Destructurer.prototype.handle = function handle(node, path){
     }, this);
   } else if (!this.root) {
     this.root = node.clone();
-    this.container.insertAfter(this.root.set(this.resolve(path)).toStatement(), this.parent);
+    (this.container || this.parent).insertAfter(this.root.set(this.resolve(path)).toStatement(), this.parent);
     if (this.value.toSource() !== this.root.toSource())
       this.emit('add', this.root, this.value.clone());
   } else {
