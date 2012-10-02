@@ -176,8 +176,8 @@ module geometry {
 
 
   export class Point extends Vector2D {
-    constructor(w, h){
-      super(w, h)
+    constructor(x, y){
+      super(x, y)
     }
     get x(){ return this[0] }
     get y(){ return this[1] }
