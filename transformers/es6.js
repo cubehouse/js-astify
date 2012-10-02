@@ -130,17 +130,26 @@ function Destructurer(parent, value, onAdd, onComplete){
   this.value = value;
   this.add = onAdd;
   this.complete = onComplete;
-  this.root = $(ASTNode.gensym());
+  this.root = value.matches('ident') ? value.clone() : $('$arg');
+  this.closure = $('#unary', 'void', $('#iife')).toStatement();
+  this.decl = $('#var');
+  this.iife = this.closure.find('#iife')[0].parent.parent;
+}
+
+function destructure(node, parent, value){
+  var handler = new Destructurer(parent, value);
+  handler.run(node);
 }
 
 Destructurer.prototype = new process.EventEmitter;
 
 Destructurer.prototype.run = function run(node){
-  this.emit('begin');
-  this.emit('declare', this.root.name, this.value);
+  this.iife.addArgument(this.root, this.value);
   this.handle(node, []);
-  this.container.insertAfter(this.root.set($('#literal', null)).toStatement(), this.parent);
-  this.emit('complete');
+  if (this.decl.declarations.length)
+    this.container.insertBefore(this.decl, this.parent);
+  this.container.insertBefore(this.closure, this.parent);
+  this.container.remove(this.parent);
 }
 
 Destructurer.prototype.handle = function handle(node, path){
@@ -153,8 +162,31 @@ Destructurer.prototype.handle = function handle(node, path){
       this.handle(prop.value, path.concat(prop.key.name));
     }, this);
   } else {
-    this.emit('add', node, this.resolve(path));
+    var resolved = this.resolve(path);
+    if (node.matches('ident'))
+      this.decl.append($('#decl', node.clone()));
+    else if (node.matches('member'))
+      node = this.checkForThis(node)
+    this.iife.append(node.set(resolved));
   }
+};
+
+Destructurer.prototype.checkForThis = function checkForThis(node){
+  var obj = node;
+  while (obj.parent && obj.parent.matches('member'))
+    obj = obj.parent;
+
+  if (obj.object.matches('this')) {
+    this.usesThis();
+    node = node.clone();
+    node.object.replaceWith($('$this'));
+  }
+  return node;
+}
+
+Destructurer.prototype.usesThis = function usesThis(){
+  this.iife.addArgument($('$this'), $('#this'));
+  this.usesThis = function(){}
 };
 
 Destructurer.prototype.resolve = function resolve(path){
@@ -165,45 +197,11 @@ Destructurer.prototype.resolve = function resolve(path){
 }
 
 
-
 function patterns(node){
-  if (node.nearest('pattern'))
-    return;
-
-  if (node.parent.matches('decl')) {
-    var handler = new Destructurer(node.parent.parent.parent, node.parent.init);
-
-    handler.on('declare', function(name, value){
-      this.parent.declare(name, value);
-    });
-
-    handler.on('add', function(name, value){
-      this.parent.declare(name.name, value);
-    });
-
-    handler.on('complete', function(){
-      node.parent.parent.remove(node.parent);
-    });
-
-  } else if (node.parent.matches('assign')) {
-    var handler = new Destructurer(node.parent.parent, node.parent.right);
-
-    handler.on('declare', function(name, value){
-      this.container.insertBefore($('#var').declare(name, value), this.parent);
-    });
-
-    handler.on('add', function(name, value){
-      this.container.insertBefore(name.set(value).toStatement(), this.parent);
-    });
-
-    handler.on('complete', function(){
-      this.container.remove(this.parent);
-    });
-
-  } else {
-    return console.log(node);
+  if (!node.nearest('pattern')) {
+    if (node.parent.matches('decl'))
+      destructure(node, node.parent.parent.parent, node.parent.init);
+    else if (node.parent.matches('assign'))
+      destructure(node, node.parent.parent, node.parent.right);
   }
-
-  handler.run(node);
 }
-
