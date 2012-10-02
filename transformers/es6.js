@@ -9,12 +9,12 @@ var ASTNode = require('astify').ASTNode,
 
 
 module.exports = function(ast){
-  [ 'arrow','class', 'module', 'taggedtemplate', 'template', 'arraypattern', 'objectpattern'].forEach(function(selector){
+  [ 'arrow', 'class', 'module', 'taggedtemplate', 'template', 'arraypattern', 'objectpattern'].forEach(function(selector){
     ast.find(selector).forEach(function(item){
       converters[selector](item);
     });
   });
-  //.log(ast.find('function[id=set]').toJSON())
+  //console.log(require('util').inspect(ast.toJSON(), null, 10))
   return ast;
 }
 
@@ -64,7 +64,7 @@ addConverter('class', function(node){
   closure.append(define.call([ctor.id.get('prototype'), constructor, hidden]));
   closure.append(ret);
 
-  if (node.type === 'ClassDeclaration') {
+  if (node.matches('class')) {
     var decl = closure.declaration(ctor.id);
     decl.identity = ctor.id.name;
     node.replaceWith(decl);
@@ -74,7 +74,16 @@ addConverter('class', function(node){
 });
 
 addConverter('arrow', function(node){
-  node.replaceWith(node.toExpression());
+  var body = node.body.clone();
+  if (!node.body.matches('block'))
+    body = $('#block').append($('#return', body));
+
+  var func = $('#function', null, node.params.clone(), body);
+
+  if (node.find('this').length)
+    func = func.get('bind').call([$('#this')]);
+
+  node.replaceWith(func);
 });
 
 addConverter('module', function(node){
@@ -117,17 +126,20 @@ addConverter('objectpattern', patterns);
 
 function Destructurer(parent, value, onAdd, onComplete){
   this.parent = parent;
+  this.container = parent.parent;
   this.value = value;
   this.add = onAdd;
   this.complete = onComplete;
-  this.container = parent.parent;
+  this.root = $(ASTNode.gensym());
 }
 
 Destructurer.prototype = new process.EventEmitter;
 
 Destructurer.prototype.run = function run(node){
   this.emit('begin');
+  this.emit('declare', this.root.name, this.value);
   this.handle(node, []);
+  this.container.insertAfter(this.root.set($('#literal', null)).toStatement(), this.parent);
   this.emit('complete');
 }
 
@@ -140,11 +152,6 @@ Destructurer.prototype.handle = function handle(node, path){
     node.properties.forEach(function(prop){
       this.handle(prop.value, path.concat(prop.key.name));
     }, this);
-  } else if (!this.root) {
-    this.root = node.clone();
-    (this.container || this.parent).insertAfter(this.root.set(this.resolve(path)).toStatement(), this.parent);
-    if (this.value.toSource() !== this.root.toSource())
-      this.emit('add', this.root, this.value.clone());
   } else {
     this.emit('add', node, this.resolve(path));
   }
@@ -160,25 +167,39 @@ Destructurer.prototype.resolve = function resolve(path){
 
 
 function patterns(node){
-  if (node.nearest('arraypattern') || node.nearest('objectpattern'))
+  if (node.nearest('pattern'))
     return;
 
   if (node.parent.matches('decl')) {
     var handler = new Destructurer(node.parent.parent.parent, node.parent.init);
+
+    handler.on('declare', function(name, value){
+      this.parent.declare(name, value);
+    });
+
     handler.on('add', function(name, value){
       this.parent.declare(name.name, value);
     });
+
     handler.on('complete', function(){
       node.parent.parent.remove(node.parent);
     });
-  } else if (node.parent.right) {
+
+  } else if (node.parent.matches('assign')) {
     var handler = new Destructurer(node.parent.parent, node.parent.right);
-    handler.on('add', function(name, v){
-      this.container.insertBefore(name.set(v).toStatement(), this.parent);
+
+    handler.on('declare', function(name, value){
+      this.container.insertBefore($('#var').declare(name, value), this.parent);
     });
+
+    handler.on('add', function(name, value){
+      this.container.insertBefore(name.set(value).toStatement(), this.parent);
+    });
+
     handler.on('complete', function(){
       this.container.remove(this.parent);
     });
+
   } else {
     return console.log(node);
   }
