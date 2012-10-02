@@ -289,6 +289,16 @@ module geometry {
     get center(){ return new Point(this.cx, this.cy) }
     get position(){ return new Point(this[0], this[1]) }
     get size(){ return new Size(this[2], this[3]) }
+    get topLeft(){ return new Point(this[0], this[1]) }
+    get topRight(){ return new Point(this[2], this[1]) }
+    get bottomLeft(){ return new Point(this[0], this[3]) }
+    get bottomRight(){ return new Point(this[2], this[3]) }
+    get left(){ return new Line(this[0], this[1], this[0], this[3]) }
+    get top(){ return new Line(this[0], this[1], this[2], this[1]) }
+    get right(){ return new Line(this[2], this[1], this[2], this[3]) }
+    get bottom(){ return new Line(this[0], this[3], this[2], this[3]) }
+    get descender(){ return new Line(this[0], this[1], this[2], this[3]) }
+    get ascender(){ return new Line(this[2], this[1], this[0], this[3]) }
     set x(v){ this[0] = v }
     set y(v){ this[1] = v }
     set w(v){ this[2] = v }
@@ -298,41 +308,21 @@ module geometry {
     set center(v){ [this.cx, this.cy] = Point.from(v) }
     set position(v){ [this[0], this[1]] = Point.from(v) }
     set size(v){ [this[2], this[3]] = Size.from(v) }
+    set topLeft(v){ [this[0], this[1]] = Point.from(v) }
+    set topRight(v){ [this[2], this[1]] = Point.from(v) }
+    set bottomLeft(v){ [this[0], this[3]] = Point.from(v) }
+    set bottomRight(v){ [this[2], this[3]] = Point.from(v) }
+    set left(v){ [this[0], this[1], this[0], this[3]] = Line.from(v) }
+    set top(v){ [this[0], this[1], this[2], this[1]] = Line.from(v) }
+    set right(v){ [this[2], this[1], this[2], this[3]] = Line.from(v) }
+    set bottom(v){ [this[0], this[3], this[2], this[3]] = Line.from(v) }
+    set descender(v){ [this[0], this[1], this[2], this[3]] = Line.from(v) }
+    set ascender(v){ [this[2], this[1], this[0], this[3]] = Line.from(v) }
     components(){
       return [this.offset, this.size]
     }
     restructure(){
       return { x: this[0], y: this[1], w: this[2], h: this[3] }
-    }
-    topLeft(){
-      return new Point(this[0], this[1])
-    }
-    topRight(){
-      return new Point(this[2], this[1])
-    }
-    bottomLeft(){
-      return new Point(this[0], this[3])
-    }
-    bottomRight(){
-      return new Point(this[2], this[3])
-    }
-    left(){
-      return new Line(this[0], this[1], this[0], this[3])
-    }
-    top(){
-      return new Line(this[0], this[1], this[2], this[1])
-    }
-    right(){
-      return new Line(this[2], this[1], this[2], this[3])
-    }
-    bottom(){
-      return new Line(this[0], this[3], this[2], this[3])
-    }
-    descender(){
-      return new Line(this[0], this[1], this[2], this[3])
-    }
-    ascender(){
-      return new Line(this[2], this[1], this[0], this[3])
     }
     inflate(){
       var size = Size.from(arguments);
