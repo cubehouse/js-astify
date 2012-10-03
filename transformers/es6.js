@@ -132,7 +132,7 @@ function Destructurer(parent, value, onAdd, onComplete){
   this.complete = onComplete;
   this.root = value.matches('ident') ? value.clone() : $('$arg');
   this.closure = $('#unary', 'void', $('#iife')).toStatement();
-  this.decl = $('#var');
+  this.decl = parent.matches('var') ? parent : $('#var');
   this.iife = this.closure.find('#iife')[0].parent.parent;
 }
 
@@ -146,10 +146,11 @@ Destructurer.prototype = new process.EventEmitter;
 Destructurer.prototype.run = function run(node){
   this.iife.addArgument(this.root, this.value);
   this.handle(node, []);
-  if (this.decl.declarations.length)
-    this.container.insertBefore(this.decl, this.parent);
-  this.container.insertBefore(this.closure, this.parent);
-  this.container.remove(this.parent);
+  this.container.insertAfter(this.closure, this.parent);
+  if (this.decl !== this.parent && this.decl.declarations.length)
+    this.container.insertAfter(this.decl, this.parent);
+  if (!this.parent.matches('var') || this.parent.declarations.length === 0)
+    this.container.remove(this.parent);
 }
 
 Destructurer.prototype.handle = function handle(node, path){
@@ -157,14 +158,19 @@ Destructurer.prototype.handle = function handle(node, path){
     node.elements.forEach(function(subnode, index){
       this.handle(subnode, path.concat(index));
     }, this);
+    if (node.parent.matches('decl'))
+      node.parent.parent.remove(node.parent);
   } else if (node.matches('objectpattern')) {
     node.properties.forEach(function(prop){
       this.handle(prop.value, path.concat(prop.key.name));
     }, this);
+    if (node.parent.matches('decl'))
+      node.parent.parent.remove(node.parent);
   } else {
     var resolved = this.resolve(path);
-    if (node.matches('ident'))
+    if (node.matches('ident')) {
       this.decl.append($('#decl', node.clone()));
+    }
     else if (node.matches('member'))
       node = this.checkForThis(node)
     this.iife.append(node.set(resolved));
