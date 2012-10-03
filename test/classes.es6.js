@@ -104,6 +104,9 @@ module geometry {
       return new Type(array)
     }
   }
+  Vector.from = function from(o){
+    return o;
+  }
 
   export class Vector2D extends Vector {
     constructor(){
@@ -319,7 +322,7 @@ module geometry {
     set descender(v){ [this[0], this[1], this[2], this[3]] = Line.from(v) }
     set ascender(v){ [this[2], this[1], this[0], this[3]] = Line.from(v) }
     components(){
-      return [this.offset, this.size]
+      return [this.position, this.size]
     }
     restructure(){
       return { x: this[0], y: this[1], w: this[2], h: this[3] }
@@ -339,8 +342,8 @@ module geometry {
                       this[3] + point[1])
     }
     rotate(angle) {
-      var dx, dy, a, d, out = new Rect
-      var { cx, cy } = this
+      var out = new Rect
+      var dx, dy, a, d, { cx, cy } = this
 
       angle *= PI / 180;
 
@@ -371,10 +374,11 @@ module geometry {
     }
     intersect() {
       var line = Line.from(arguments)
-      return [line.intersect(this.left()),
-              line.intersect(this.top()),
-              line.intersect(this.right()),
-              line.intersect(this.bottom())]
+      line instanceof Line || (line = new Line(line));
+      return [line.intersect(this.left),
+              line.intersect(this.top),
+              line.intersect(this.right),
+              line.intersect(this.bottom)]
     }
     union(){
       var rect = Rect.from(arguments)
