@@ -9,11 +9,11 @@ var ASTNode = require('astify').ASTNode,
 
 
 module.exports = function(ast){
-  [ 'arrow', 'class', 'module', 'taggedtemplate', 'template', 'arraypattern', 'objectpattern'].forEach(function(selector){
-    ast.find(selector).forEach(function(item){
-      converters[selector](item);
+  for (var k in converters) {
+    ast.find(k).forEach(function(item){
+      converters[k](item);
     });
-  });
+  }
   //console.log(require('util').inspect(ast.toJSON(), null, 10))
   return ast;
 }
@@ -26,10 +26,18 @@ function addConverter(type, callback){
   converters[type] = callback;
 }
 
+var arraySlice = $('Array').get('prototype').get('slice').get('call');
+
+
+addConverter('function[rest!=null]', function(node){
+  var index = node.params.length;
+  var decl = $('#var').declare(node.rest.name, arraySlice.call([$('#ident', 'arguments'), index]));
+  node.body.prepend(decl);
+  node.rest = null;
+});
 
 addConverter('class', function(node){
   var ctor = node.findConstructor();
-
   ctor.id = node.id || node.identity;
 
   if (node.superClass) {
@@ -91,7 +99,8 @@ addConverter('module', function(node){
   var closure = $('#functionexpr', null, ['global', 'exports'], node.body.clone());
   var args = [$('#this'), $('#this'), ASTNode.parse('typeof exports === "undefined" ? {} : exports')];
   closure.returns('exports');
-  node.replaceWith(freeze.call(closure.get('call').call(args)).declaration(node.id));
+  var decl = freeze.call(closure.get('call').call(args)).declaration(node.id);
+  node.replaceWith(decl);
 });
 
 addConverter('template', function(node, tag){
