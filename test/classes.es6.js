@@ -137,7 +137,7 @@ module geometry {
     }
   }
   coercer(Vector2D, n => empty)
-  Vector2D.prototype.length = 2
+  Object.defineProperty(Vector2D.prototype, 'length', { value: 2 })
 
 
   export class Vector4D extends Vector {
@@ -174,7 +174,7 @@ module geometry {
     }
   }
   coercer(Vector4D, n => empty)
-  Vector4D.prototype.length = 4
+  Object.defineProperty(Vector4D.prototype, 'length', { value: 4 })
 
 
 
