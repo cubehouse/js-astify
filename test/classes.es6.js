@@ -1,8 +1,6 @@
 //!#es6
 
 module geometry {
-  var byteString = Function.prototype.apply.bind(String.fromCharCode, null);
-
   var { min, max, sqrt, pow, acos, atan2, cos, sin, PI } = Math;
 
   var empty = [0, 0, 0, 0];
@@ -56,7 +54,7 @@ module geometry {
         case 'object':
           if ('length' in a) return a
         case 'function':
-        return handler(a)
+          return handler(a)
       }
     }
   }
@@ -92,9 +90,6 @@ module geometry {
           return false;
       return true
     }
-    toBytes(){
-      return byteString(this)
-    }
     toArray(){
       return Array.apply(null, this)
     }
@@ -104,9 +99,7 @@ module geometry {
       return new Type(array)
     }
   }
-  Vector.from = function from(o){
-    return o;
-  }
+  Vector.from = n => n
 
   export class Vector2D extends Vector {
     constructor(){
@@ -188,7 +181,7 @@ module geometry {
     set y(v){ this[1] = v }
     get size(){ return this.distance([0, 0]) }
     get quadrant(){ return (this[0] < 0) << 1 | (this[1] < 0) }
-
+    get originTangent(){ return this.lineTo([0, 0]) }
     distance(v){
       v = Point.from(v)
       return sqrt(pow(this[0] - v[0], 2) + pow(this[1] - v[1], 2))
@@ -237,15 +230,11 @@ module geometry {
     get maxX(){ return this[0] > this[2] ? this[0] : this[2] }
     get minX(){ return this[0] < this[2] ? this[0] : this[2] }
     get maxY(){ return this[1] > this[3] ? this[1] : this[3] }
+    get max(){ return new Point(this.maxX, this.maxY) }
+    get min(){ return new Point(this.minX, this.minY) }
     get minY(){ return this[1] < this[3] ? this[1] : this[3] }
     get distance(){ return sqrt(pow(this[2] - this[0], 2) + pow(this[3] - this[1], 2)) }
     get slope(){ return (this[3] - this[1]) / (this[2] - this[0]) }
-    max(){
-      return new Point(this.maxX, this.maxY)
-    }
-    min(){
-      return new Point(this.minX, this.minY)
-    }
     intersect(line) {
       var ax = this[0] - this[2],
           ay = this[1] - this[3],
