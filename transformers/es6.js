@@ -1,12 +1,12 @@
 var ASTNode = require('astify').ASTNode,
     $ = ASTNode.createNode,
     converters = {},
+    define = require('../lib/utility').define,
     freeze = $('Object').get('freeze'),
     defaultQuasi = ASTNode.parse(function(r){
       for (var i=0, o=''; r[i]; o += r[i].raw + (++i === r.length ? '' : arguments[i]));
       return o;
     });
-
 
 module.exports = function(ast){
   for (var k in converters) {
@@ -18,15 +18,39 @@ module.exports = function(ast){
   return ast;
 }
 
-var define = $('Object').get('defineProperty'),
+function typeOF(name, type){
+  return $('#binary', '===', $('#unary', 'typeof', $(name)), $('#literal', type));
+}
+
+function ternary(check, either, or){
+  return $('#conditional', check, either, or);
+}
+
+function object(){
+  return $('#object');
+}
+
+function get(path){
+  if (typeof path === 'string')
+    path = path.split('.');
+  var base = typeof path[0] === 'string' ? $(path[0]) : path[0];
+  for (var i=1; i < path.length; i++)
+    base = base.get(path[i]);
+  return base;
+}
+
+
+var defineProperty = get('Object.defineProperty'),
     constructor = $('#literal', 'constructor'),
-    hidden = $('#object', { enumerable: false });
+    hidden = $('#object', { enumerable: false }),
+    arraySlice = get('Array.prototype.slice.call');
+
+
 
 function addConverter(type, callback){
   converters[type] = callback;
 }
 
-var arraySlice = $('Array').get('prototype').get('slice').get('call');
 
 
 addConverter('function[rest!=null]', function(node){
@@ -44,7 +68,7 @@ addConverter('class', function(node){
     var superclass = node.superClass && node.superClass.clone();
     node.find('member[object=super]').forEach(function(superCall){
       var call = superCall.parent;
-      call.callee = superclass.get('prototype').get(superCall.property);
+      call.callee = get(superclass, 'prototype', superCall.property);
       call.call();
     });
     node.find('call[callee=super]').forEach(function(superCall){
@@ -69,7 +93,7 @@ addConverter('class', function(node){
   });
 
   closure.append(node.id.set('prototype', prototype));
-  closure.append(define.call([ctor.id.get('prototype'), constructor, hidden]));
+  closure.append(defineProperty.call([ctor.id.get('prototype'), constructor, hidden]));
   closure.append(ret);
 
   if (node.matches('class')) {
@@ -97,7 +121,7 @@ addConverter('arrow', function(node){
 addConverter('module', function(node){
   node.find('export').forEach(converters.export);
   var closure = $('#functionexpr', null, ['global', 'exports'], node.body.clone());
-  var args = [$('#this'), $('#this'), ASTNode.parse('typeof exports === "undefined" ? {} : exports')];
+  var args = [$('#this'), $('#this'), ternary(typeOF('exports', 'undefined'), object(), $('exports'))];
   closure.returns('exports');
   var decl = freeze.call(closure.get('call').call(args)).declaration(node.id);
   node.replaceWith(decl);
@@ -150,66 +174,72 @@ function destructure(node, parent, value){
   handler.run(node);
 }
 
-Destructurer.prototype = new process.EventEmitter;
+var interpretPattern = {
+  ArrayPattern: function(node, index, array){
+    this.handle(node, array.path.concat(index));
+  },
+  ObjectPattern: function(prop, index, array){
+    this.handle(prop.value, array.path.concat(prop.key.name));
+  }
+};
 
-Destructurer.prototype.run = function run(node){
-  this.iife.addArgument(this.root, this.value);
-  this.handle(node, []);
-  this.container.insertAfter(this.closure, this.parent);
-  if (this.decl !== this.parent && this.decl.declarations.length)
-    this.container.insertAfter(this.decl, this.parent);
-  if (!this.parent.matches('var') || this.parent.declarations.length === 0)
-    this.container.remove(this.parent);
-}
 
-Destructurer.prototype.handle = function handle(node, path){
-  if (node.matches('arraypattern')) {
-    node.elements.forEach(function(subnode, index){
-      this.handle(subnode, path.concat(index));
-    }, this);
-    if (node.parent.matches('decl'))
+
+define(Destructurer.prototype, [
+  function run(node){
+    this.iife.addArgument(this.root, this.value);
+    this.handle(node, []);
+    this.container.insertAfter(this.closure, this.parent);
+
+    if (this.decl !== this.parent && this.decl.declarations.length)
+      this.container.insertAfter(this.decl, this.parent);
+
+    if (!this.parent.matches('var') || this.parent.declarations.length === 0)
+      this.container.remove(this.parent);
+  },
+  function handle(node, path){
+    if (node.matches('pattern')) {
+      var components = node.elements || node.properties;
+      components.path = path;
+      components.forEach(interpretPattern[node.type], this);
+
+      if (node.parent.matches('decl'))
       node.parent.parent.remove(node.parent);
-  } else if (node.matches('objectpattern')) {
-    node.properties.forEach(function(prop){
-      this.handle(prop.value, path.concat(prop.key.name));
-    }, this);
-    if (node.parent.matches('decl'))
-      node.parent.parent.remove(node.parent);
-  } else {
-    var resolved = this.resolve(path);
-    if (node.matches('ident')) {
-      this.decl.append($('#decl', node.clone()));
+
+    } else {
+      var resolved = this.resolve(path);
+
+      if (node.matches('ident'))
+        this.decl.append($('#decl', node.clone()));
+      else if (node.matches('member'))
+        node = this.checkForThis(node)
+
+      this.iife.append(node.set(resolved));
     }
-    else if (node.matches('member'))
-      node = this.checkForThis(node)
-    this.iife.append(node.set(resolved));
+  },
+  function checkForThis(node){
+    var obj = node;
+    while (obj.parent && obj.parent.matches('member'))
+      obj = obj.parent;
+
+    if (obj.object.matches('this')) {
+      this.usesThis();
+      node = node.clone();
+      node.object.replaceWith($('$this'));
+    }
+    return node;
+  },
+  function usesThis(){
+    this.iife.addArgument($('$this'), $('#this'));
+    this.usesThis = function(){}
+  },
+  function resolve(path){
+    var root = this.root;
+    for (var i=0; i < path.length; i++)
+      root = root.get(path[i]);
+    return root;
   }
-};
-
-Destructurer.prototype.checkForThis = function checkForThis(node){
-  var obj = node;
-  while (obj.parent && obj.parent.matches('member'))
-    obj = obj.parent;
-
-  if (obj.object.matches('this')) {
-    this.usesThis();
-    node = node.clone();
-    node.object.replaceWith($('$this'));
-  }
-  return node;
-}
-
-Destructurer.prototype.usesThis = function usesThis(){
-  this.iife.addArgument($('$this'), $('#this'));
-  this.usesThis = function(){}
-};
-
-Destructurer.prototype.resolve = function resolve(path){
-  var root = this.root;
-  for (var i=0; i < path.length; i++)
-    root = root.get(path[i]);
-  return root;
-}
+]);
 
 
 function patterns(node){
