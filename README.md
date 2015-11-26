@@ -3,6 +3,8 @@ Astify generates Abstract Syntax Trees from objects in live JS (as well as from 
 
 This is still experimental and unfinished.
 
+This is a fork of the original astify, with the dependancies included and uploaded to npm.
+
 ## Usage
 It is currently set up for use in Node.js (will be combining for a browser build soon).
 

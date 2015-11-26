@@ -1,8 +1,30 @@
 {
   "name": "astify",
   "version": "0.0.1",
-  "description": "",
+  "description": "Astify generates Abstract Syntax Trees from objects in live JS (as well as from source). Want to convert the entire global object to source? `global.toAST().toSource()`. Beyond adding `toAST`, astify also makes build AST (which is then convertable to code using `toSource`) super simple to do. Frankenstein different pieces of objects and functions together to make new ones.",
   "main": "./astify.js",
-  "repository": "",
-  "author": "Brandon Benvie <http://bbenvie.com>"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cubehouse/js-astify.git"
+  },
+  "author": "Brandon Benvie <http://bbenvie.com>",
+  "dependencies": {
+    "escodegen": "^1.7.1",
+    "esprima": "^2.7.0"
+  },
+  "bin": {
+    "astify": "astify.js"
+  },
+  "directories": {
+    "test": "test"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cubehouse/js-astify/issues"
+  },
+  "homepage": "https://github.com/cubehouse/js-astify#readme"
 }
