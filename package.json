@@ -1,6 +1,6 @@
 {
   "name": "astify",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Astify generates Abstract Syntax Trees from objects in live JS (as well as from source). Want to convert the entire global object to source? `global.toAST().toSource()`. Beyond adding `toAST`, astify also makes build AST (which is then convertable to code using `toSource`) super simple to do. Frankenstein different pieces of objects and functions together to make new ones.",
   "main": "./astify.js",
   "repository": {
